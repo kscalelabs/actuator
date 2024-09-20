@@ -5,7 +5,8 @@ edition = "2021"
 
 [lib]
 name = "lib"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.17", features = ["extension-module"] }
+pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3-stub-gen = "0.6.0"

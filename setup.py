@@ -2,24 +2,11 @@
 #!/usr/bin/env python
 """Setup script for the project."""
 
-import os
 import re
 import subprocess
 
-from setuptools import setup
-from setuptools.command.build_ext import build_ext as _build_ext
+from setuptools import Command, setup
 from setuptools_rust import Binding, RustExtension
-
-
-class BuildExtWithStubgen(_build_ext):
-    def run(self) -> None:
-        super().run()
-
-        module_name = "actuator.rust.lib"
-        output_dir = os.path.dirname(__file__)
-        os.makedirs(output_dir, exist_ok=True)
-        subprocess.run(["stubgen", "-m", module_name, "-o", output_dir], check=False)
-
 
 with open("README.md", "r", encoding="utf-8") as f:
     long_description: str = f.read()
@@ -39,6 +26,22 @@ assert version_re is not None, "Could not find version in actuator/__init__.py"
 version: str = version_re.group(1)
 
 
+class PostInstallCommand(Command):
+    """Post-installation for installation mode."""
+
+    description = "Run stub_gen after installation"
+    user_options = []
+
+    def initialize_options(self) -> None:
+        pass
+
+    def finalize_options(self) -> None:
+        pass
+
+    def run(self) -> None:
+        subprocess.check_call(["cargo", "run", "--bin", "stub_gen"], cwd="actuator/rust")
+
+
 setup(
     name="actuator",
     version=version,
@@ -52,7 +55,6 @@ setup(
             binding=Binding.PyO3,
         )
     ],
-    cmdclass={"build_ext": BuildExtWithStubgen},
     setup_requires=[
         "setuptools-rust",
         "mypy",  # For stubgen
@@ -65,4 +67,7 @@ setup(
     install_requires=requirements,
     tests_require=requirements_dev,
     extras_require={"dev": requirements_dev},
+    cmdclass={
+        "post_install": PostInstallCommand,
+    },
 )
