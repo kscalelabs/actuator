@@ -1,1 +1,5 @@
-recursive-include actuator/ *.py *.txt py.typed MANIFEST.in
+include actuator/rust/Cargo.toml
+include actuator/rust/Cargo.lock
+include actuator/rust/*.so
+include actuator/rust/*.pyi
+recursive-include actuator/rust/src *.rs

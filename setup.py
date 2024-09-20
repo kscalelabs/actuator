@@ -2,9 +2,24 @@
 #!/usr/bin/env python
 """Setup script for the project."""
 
+import os
 import re
+import subprocess
 
 from setuptools import setup
+from setuptools.command.build_ext import build_ext as _build_ext
+from setuptools_rust import Binding, RustExtension
+
+
+class BuildExtWithStubgen(_build_ext):
+    def run(self) -> None:
+        super().run()
+
+        module_name = "actuator.rust.lib"
+        output_dir = os.path.dirname(__file__)
+        os.makedirs(output_dir, exist_ok=True)
+        subprocess.run(["stubgen", "-m", module_name, "-o", output_dir], check=False)
+
 
 with open("README.md", "r", encoding="utf-8") as f:
     long_description: str = f.read()
@@ -30,6 +45,20 @@ setup(
     description="The actuator project",
     author="Benjamin Bolte",
     url="https://github.com/kscalelabs/actuator",
+    rust_extensions=[
+        RustExtension(
+            target="actuator.rust.lib",
+            path="actuator/rust/Cargo.toml",
+            binding=Binding.PyO3,
+        )
+    ],
+    cmdclass={"build_ext": BuildExtWithStubgen},
+    setup_requires=[
+        "setuptools-rust",
+        "mypy",  # For stubgen
+    ],
+    include_package_data=True,
+    zip_safe=False,
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.11",
