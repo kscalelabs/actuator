@@ -1,11 +1,14 @@
 """Defines the CLI for the actuator project."""
 
-from actuator.rust.lib import hello_world, mean
+import time
+
+from actuator.rust.lib import Actuator
 
 
 def main() -> None:
-    hello_world()
-    print(mean([1, 2, 3, 4, 5]))
+    act = Actuator()
+    time.sleep(3)
+    print(act)
 
 
 if __name__ == "__main__":
