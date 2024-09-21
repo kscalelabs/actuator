@@ -6,6 +6,9 @@ import typing
 def hello_world() -> None:
     ...
 
+def mean(v:typing.Sequence[int]) -> float:
+    ...
+
 def sum(v:typing.Sequence[int]) -> int:
     ...
 
