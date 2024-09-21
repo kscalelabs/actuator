@@ -3,9 +3,8 @@
 """Setup script for the project."""
 
 import re
-import subprocess
 
-from setuptools import Command, setup
+from setuptools import setup
 from setuptools_rust import Binding, RustExtension
 
 with open("README.md", "r", encoding="utf-8") as f:
@@ -26,22 +25,6 @@ assert version_re is not None, "Could not find version in actuator/__init__.py"
 version: str = version_re.group(1)
 
 
-class PostInstallCommand(Command):
-    """Post-installation for installation mode."""
-
-    description = "Run stub_gen after installation"
-    user_options = []
-
-    def initialize_options(self) -> None:
-        pass
-
-    def finalize_options(self) -> None:
-        pass
-
-    def run(self) -> None:
-        subprocess.check_call(["cargo", "run", "--bin", "stub_gen"], cwd="actuator/rust")
-
-
 setup(
     name="actuator",
     version=version,
@@ -53,12 +36,9 @@ setup(
             target="actuator.rust.lib",
             path="actuator/rust/Cargo.toml",
             binding=Binding.PyO3,
-        )
+        ),
     ],
-    setup_requires=[
-        "setuptools-rust",
-        "mypy",  # For stubgen
-    ],
+    setup_requires=["setuptools-rust"],
     include_package_data=True,
     zip_safe=False,
     long_description=long_description,
@@ -67,7 +47,4 @@ setup(
     install_requires=requirements,
     tests_require=requirements_dev,
     extras_require={"dev": requirements_dev},
-    cmdclass={
-        "post_install": PostInstallCommand,
-    },
 )

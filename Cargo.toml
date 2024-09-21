@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "actuator/rust",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+description = "Actuator Python bindings"
+authors = ["K-Scale Labs <ben@kscale.dev>"]
+repository = "https://github.com/kscalelabs/actuator"
+license = "MIT"
+readme = "README.md"
+
+[workspace.dependencies]
+pyo3 = { version = ">= 0.21.0", features = ["extension-module"] }
+pyo3-stub-gen = ">= 0.6.0"
+env_logger = "0.11.5"
