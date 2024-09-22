@@ -26,17 +26,18 @@ all:
 #          Build           #
 # ------------------------ #
 
-install:
-	@pip install --verbose -e .
-.PHONY: install
+install-and-run:
+	@uv pip install -e '.[dev]'
+	@python -m actuator.cli
+.PHONY: install-and-run
 
-install-dev:
-	@pip install --verbose -e '.[dev]'
-.PHONY: install
+build-rust:
+	@RUST_BACKTRACE=1 cargo build -p lib
+.PHONY: build-rust
 
-build-ext:
-	@python setup.py build_ext --inplace
-.PHONY: build-ext
+build-stubs:
+	@RUST_BACKTRACE=1 cargo run --bin stub_gen -p lib --verbose
+.PHONY: build-stubs
 
 clean:
 	rm -rf build dist *.so **/*.so **/*.pyi **/*.pyc **/*.pyd **/*.pyo **/__pycache__ *.egg-info .eggs/ .ruff_cache/
