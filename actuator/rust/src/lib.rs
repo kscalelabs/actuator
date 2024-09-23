@@ -10,6 +10,9 @@ use tokio::runtime::Runtime;
 mod robstride;
 use robstride::Robstride;
 
+pub mod can;
+use can::ping;
+
 pub trait ActuatorImpl: Send + Sync {
     fn set_position(&self, actuator_id: u8, position: f64);
     fn get_position(&self, actuator_id: u8) -> f64;
@@ -130,10 +133,17 @@ impl Drop for Actuator {
     }
 }
 
+#[pyfunction]
+fn test_can() -> PyResult<()> {
+    let _ = ping(None);
+    Ok(())
+}
+
 #[pymodule]
 fn lib(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Actuator>()?;
     m.add_class::<ActuatorType>()?;
+    m.add_function(wrap_pyfunction!(test_can, m)?)?;
     Ok(())
 }
 
