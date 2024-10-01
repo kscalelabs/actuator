@@ -1,26 +1,13 @@
 [package]
-name = "lib"
-version.workspace = true
-edition.workspace = true
-description.workspace = true
-authors.workspace = true
-repository.workspace = true
-license.workspace = true
-readme.workspace = true
-
-[lib]
-name = "lib"
-crate-type = ["cdylib", "rlib"]
+name = "robstride"
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
-pyo3.workspace = true
-pyo3-stub-gen.workspace = true
-tokio.workspace = true
-async-trait.workspace = true
-futures.workspace = true
-log.workspace = true
-env_logger.workspace = true
+serialport = "4.0"
+pyo3 = { version = "0.22.3", features = ["extension-module"] }
 
-[[bin]]
-name = "stub_gen"
-doc = false
+[lib]
+crate-type = ["cdylib"]
+path = "src/robstride.rs"
+
