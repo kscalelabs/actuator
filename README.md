@@ -6,7 +6,15 @@ Defines a package to make it easy and performant to control actuators.
 
 ## Getting Started
 
-Install the package:
+### Build Dependencies
+
+#### Ubuntu
+
+```bash
+sudo apt install pkg-config libudev-dev
+```
+
+### Install the Package
 
 ```bash
 pip install actuator
@@ -21,4 +29,3 @@ pip install 'actuator @ git+https://github.com/kscalelabs/actuator.git@master'
 ## Supported Actuators
 
 - [Robstride](https://robstride.com/)
-
