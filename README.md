@@ -6,7 +6,7 @@ Defines a package to make it easy and performant to control actuators.
 
 ## Getting Started
 
-### Build Dependencies
+### Install Build Dependencies
 
 #### Ubuntu
 
