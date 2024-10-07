@@ -1,0 +1,20 @@
+[package]
+name = "robstride"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[lib]
+name = "lib"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serialport = "4.5.1"
+
+[[bin]]
+name = "ping"
+doc = false

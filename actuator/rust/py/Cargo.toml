@@ -25,7 +25,3 @@ serialport = "4.5.1"
 [[bin]]
 name = "stub_gen"
 doc = false
-
-[[bin]]
-name = "ping"
-doc = false

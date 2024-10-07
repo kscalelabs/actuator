@@ -15,10 +15,12 @@ const P_MIN: f32 = -12.5;
 const P_MAX: f32 = 12.5;
 const V_MIN: f32 = -44.0;
 const V_MAX: f32 = 44.0;
+
 const KP_MIN: f32 = 0.0;
 const KP_MAX: f32 = 500.0;
 const KD_MIN: f32 = 0.0;
 const KD_MAX: f32 = 5.0;
+
 const T_MIN: f32 = -12.0;
 const T_MAX: f32 = 12.0;
 
@@ -88,7 +90,6 @@ struct MotorFeedback {
     torque: f32,
     mode: MotorMode,
     faults: u16,
-    is_set: bool,
 }
 
 fn init_serial_port(device: &str) -> Result<Box<dyn SerialPort>, serialport::Error> {
@@ -183,7 +184,6 @@ fn read_bytes(port: &mut Box<dyn SerialPort>) -> Result<MotorFeedback, std::io::
             torque,
             mode,
             faults,
-            is_set: true,
         };
 
         println!("Parsed data:");
@@ -203,7 +203,6 @@ fn read_bytes(port: &mut Box<dyn SerialPort>) -> Result<MotorFeedback, std::io::
             torque: 0.0,
             mode: MotorMode::Reset,
             faults: 0,
-            is_set: false,
         })
     }
 }
@@ -332,7 +331,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = send_set_speed_limit(&mut port, id, 5.0)?;
     thread::sleep(Duration::from_millis(50));
 
-    for i in 0..10 {
+    for i in 0..3 {
         // Set location
         let _ = send_set_location(&mut port, id, std::f32::consts::PI * i as f32 / 2.0)?;
         thread::sleep(Duration::from_secs(1));
