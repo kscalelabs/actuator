@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "actuator/rust",
+    "actuator/rust/py",
+    "actuator/rust/robstride",
 ]
 resolver = "2"
 
@@ -8,7 +9,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 
-description = "Actuator Python bindings"
+description = "Actuator package"
 authors = ["K-Scale Labs <ben@kscale.dev>"]
 repository = "https://github.com/kscalelabs/actuator"
 license = "MIT"

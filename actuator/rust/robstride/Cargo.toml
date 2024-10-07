@@ -9,12 +9,8 @@ license.workspace = true
 readme.workspace = true
 
 [lib]
-name = "lib"
+name = "robstride"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serialport = "4.5.1"
-
-[[bin]]
-name = "ping"
-doc = false
