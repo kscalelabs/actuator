@@ -103,13 +103,32 @@ fn init_serial_port(device: &str) -> Result<Box<dyn SerialPort>, serialport::Err
     Ok(port)
 }
 
+fn pack_bits(values: &[u32], bit_lengths: &[u8]) -> u32 {
+    let mut result: u32 = 0;
+    let mut current_shift = 0;
+
+    for (&value, &bits) in values.iter().zip(bit_lengths.iter()).rev() {
+        let mask = (1 << bits) - 1;
+        result |= (value & mask) << current_shift;
+        current_shift += bits;
+    }
+
+    result
+}
+
 fn txd_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io::Error> {
     let mut buffer = Vec::new();
     buffer.extend_from_slice(b"AT");
 
-    let addr = (pack.ex_id.id as u32) << 24
-        | (pack.ex_id.data as u32) << 8
-        | (pack.ex_id.mode as u32) << 3
+    let addr = (pack_bits(
+        &[
+            pack.ex_id.res as u32,
+            pack.ex_id.mode as u32,
+            pack.ex_id.data as u32,
+            pack.ex_id.id as u32,
+        ],
+        &[3, 5, 16, 8],
+    ) << 3)
         | 0x00000004;
 
     buffer.extend_from_slice(&addr.to_be_bytes());
