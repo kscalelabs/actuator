@@ -129,199 +129,6 @@ pub struct MotorFeedback {
     pub faults: u16,
 }
 
-pub struct Motor {
-    port: Box<dyn SerialPort>,
-    config: MotorConfig,
-    id: u8,
-}
-
-impl Motor {
-    pub fn new(
-        tty_port: &str,
-        config: MotorConfig,
-        id: u8,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let port = init_serial_port(tty_port)?;
-        Ok(Motor { port, config, id })
-    }
-
-    fn txd_pack(&mut self, pack: &CanPack) -> Result<(), std::io::Error> {
-        let mut buffer = Vec::new();
-        buffer.extend_from_slice(b"AT");
-
-        let addr = (pack_bits(
-            &[
-                pack.ex_id.res as u32,
-                pack.ex_id.mode as u32,
-                pack.ex_id.data as u32,
-                pack.ex_id.id as u32,
-            ],
-            &[3, 5, 16, 8],
-        ) << 3)
-            | 0x00000004;
-
-        buffer.extend_from_slice(&addr.to_be_bytes());
-        buffer.push(pack.len);
-        buffer.extend_from_slice(&pack.data[..pack.len as usize]);
-        buffer.extend_from_slice(b"\r\n");
-
-        println!("tx {:02X?}", buffer);
-
-        self.port.write_all(&buffer)?;
-        self.port.flush()?;
-        Ok(())
-    }
-
-    fn read_bytes(&mut self) -> Result<MotorFeedback, std::io::Error> {
-        let mut buffer = [0u8; 17];
-        let bytes_read = self.port.read(&mut buffer)?;
-
-        println!("rx {:02X?}", &buffer[..bytes_read]);
-
-        if bytes_read == 17 && buffer[0] == b'A' && buffer[1] == b'T' {
-            let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]) >> 3;
-            let ex_id = ExId {
-                id: (addr & 0xFF) as u8,
-                data: ((addr >> 8) & 0xFFFF) as u16,
-                mode: unsafe { std::mem::transmute((addr >> 24) as u8) },
-                res: 0,
-            };
-
-            let can_id = ex_id.data & 0x00FF;
-            let faults = (ex_id.data & 0x3F00) >> 8;
-            let mode = unsafe { std::mem::transmute(((ex_id.data & 0xC000) >> 14) as u8) };
-
-            let pos_int_get = u16::from_be_bytes([buffer[7], buffer[8]]);
-            let vel_int_get = u16::from_be_bytes([buffer[9], buffer[10]]);
-            let torque_int_get = u16::from_be_bytes([buffer[11], buffer[12]]);
-
-            let position = uint_to_float(pos_int_get, self.config.p_min, self.config.p_max, 16);
-            let velocity = uint_to_float(vel_int_get, self.config.v_min, self.config.v_max, 16);
-            let torque = uint_to_float(torque_int_get, self.config.t_min, self.config.t_max, 16);
-
-            let feedback = MotorFeedback {
-                can_id,
-                position,
-                velocity,
-                torque,
-                mode,
-                faults,
-            };
-
-            println!("Parsed data:");
-            println!("  Motor ID: {}", feedback.can_id);
-            println!("  Position: {}", feedback.position);
-            println!("  Velocity: {}", feedback.velocity);
-            println!("  Torque: {}", feedback.torque);
-            println!("  Mode: {:?}", feedback.mode);
-            println!("  Faults: {:?}", feedback.faults);
-
-            Ok(feedback)
-        } else {
-            Ok(MotorFeedback {
-                can_id: 0,
-                position: 0.0,
-                velocity: 0.0,
-                torque: 0.0,
-                mode: MotorMode::Reset,
-                faults: 0,
-            })
-        }
-    }
-
-    pub fn send_set_mode(&mut self, run_mode: RunMode) -> Result<MotorFeedback, std::io::Error> {
-        let mut pack = CanPack {
-            ex_id: ExId {
-                id: self.id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::SdoWrite,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
-
-        let index: u16 = 0x7005;
-        pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        pack.data[4] = run_mode as u8;
-
-        self.txd_pack(&pack)?;
-        self.read_bytes()
-    }
-
-    pub fn send_reset(&mut self) -> Result<MotorFeedback, std::io::Error> {
-        let pack = CanPack {
-            ex_id: ExId {
-                id: self.id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::MotorReset,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
-
-        self.txd_pack(&pack)?;
-        self.read_bytes()
-    }
-
-    pub fn send_start(&mut self) -> Result<MotorFeedback, std::io::Error> {
-        let pack = CanPack {
-            ex_id: ExId {
-                id: self.id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::MotorIn,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
-
-        self.txd_pack(&pack)?;
-        self.read_bytes()
-    }
-
-    pub fn send_set_speed_limit(&mut self, speed: f32) -> Result<MotorFeedback, std::io::Error> {
-        let mut pack = CanPack {
-            ex_id: ExId {
-                id: self.id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::SdoWrite,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
-
-        let index: u16 = 0x7017;
-        pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        pack.data[4..8].copy_from_slice(&speed.to_le_bytes());
-
-        self.txd_pack(&pack)?;
-        self.read_bytes()
-    }
-
-    pub fn send_set_location(&mut self, location: f32) -> Result<MotorFeedback, std::io::Error> {
-        let mut pack = CanPack {
-            ex_id: ExId {
-                id: self.id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::SdoWrite,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
-
-        let index: u16 = 0x7016;
-        pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        pack.data[4..8].copy_from_slice(&location.to_le_bytes());
-
-        self.txd_pack(&pack)?;
-        self.read_bytes()
-    }
-}
-
 fn init_serial_port(device: &str) -> Result<Box<dyn SerialPort>, serialport::Error> {
     let port = serialport::new(device, BAUDRATE)
         .data_bits(serialport::DataBits::Eight)
@@ -351,4 +158,200 @@ fn uint_to_float(x_int: u16, x_min: f32, x_max: f32, bits: u8) -> f32 {
     let span = x_max - x_min;
     let offset = x_min;
     (x_int as f32) * span / ((1 << bits) - 1) as f32 + offset
+}
+
+fn txd_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io::Error> {
+    let mut buffer = Vec::new();
+    buffer.extend_from_slice(b"AT");
+
+    let addr = (pack_bits(
+        &[
+            pack.ex_id.res as u32,
+            pack.ex_id.mode as u32,
+            pack.ex_id.data as u32,
+            pack.ex_id.id as u32,
+        ],
+        &[3, 5, 16, 8],
+    ) << 3)
+        | 0x00000004;
+
+    buffer.extend_from_slice(&addr.to_be_bytes());
+    buffer.push(pack.len);
+    buffer.extend_from_slice(&pack.data[..pack.len as usize]);
+    buffer.extend_from_slice(b"\r\n");
+
+    println!("tx {:02X?}", buffer);
+
+    port.write_all(&buffer)?;
+    port.flush()?;
+    Ok(())
+}
+
+fn read_bytes(
+    port: &mut Box<dyn SerialPort>,
+    config: &MotorConfig,
+) -> Result<MotorFeedback, std::io::Error> {
+    let mut buffer = [0u8; 17];
+    let bytes_read = port.read(&mut buffer)?;
+
+    println!("rx {:02X?}", &buffer[..bytes_read]);
+
+    if bytes_read == 17 && buffer[0] == b'A' && buffer[1] == b'T' {
+        let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]) >> 3;
+        let ex_id = ExId {
+            id: (addr & 0xFF) as u8,
+            data: ((addr >> 8) & 0xFFFF) as u16,
+            mode: unsafe { std::mem::transmute((addr >> 24) as u8) },
+            res: 0,
+        };
+
+        let can_id = ex_id.data & 0x00FF;
+        let faults = (ex_id.data & 0x3F00) >> 8;
+        let mode = unsafe { std::mem::transmute(((ex_id.data & 0xC000) >> 14) as u8) };
+
+        let pos_int_get = u16::from_be_bytes([buffer[7], buffer[8]]);
+        let vel_int_get = u16::from_be_bytes([buffer[9], buffer[10]]);
+        let torque_int_get = u16::from_be_bytes([buffer[11], buffer[12]]);
+
+        let position = uint_to_float(pos_int_get, config.p_min, config.p_max, 16);
+        let velocity = uint_to_float(vel_int_get, config.v_min, config.v_max, 16);
+        let torque = uint_to_float(torque_int_get, config.t_min, config.t_max, 16);
+
+        let feedback = MotorFeedback {
+            can_id,
+            position,
+            velocity,
+            torque,
+            mode,
+            faults,
+        };
+
+        println!("Parsed data:");
+        println!("  Motor ID: {}", feedback.can_id);
+        println!("  Position: {}", feedback.position);
+        println!("  Velocity: {}", feedback.velocity);
+        println!("  Torque: {}", feedback.torque);
+        println!("  Mode: {:?}", feedback.mode);
+        println!("  Faults: {:?}", feedback.faults);
+
+        Ok(feedback)
+    } else {
+        Ok(MotorFeedback {
+            can_id: 0,
+            position: 0.0,
+            velocity: 0.0,
+            torque: 0.0,
+            mode: MotorMode::Reset,
+            faults: 0,
+        })
+    }
+}
+
+pub struct Motor {
+    port: Box<dyn SerialPort>,
+    config: MotorConfig,
+    id: u8,
+}
+
+impl Motor {
+    pub fn new(
+        tty_port: &str,
+        config: MotorConfig,
+        id: u8,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let port = init_serial_port(tty_port)?;
+        Ok(Motor { port, config, id })
+    }
+
+    pub fn send_set_mode(&mut self, run_mode: RunMode) -> Result<MotorFeedback, std::io::Error> {
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: self.id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::SdoWrite,
+                res: 0,
+            },
+            len: 8,
+            data: [0; 8],
+        };
+
+        let index: u16 = 0x7005;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        pack.data[4] = run_mode as u8;
+
+        txd_pack(&mut self.port, &pack)?;
+        read_bytes(&mut self.port, &self.config)
+    }
+
+    pub fn send_reset(&mut self) -> Result<MotorFeedback, std::io::Error> {
+        let pack = CanPack {
+            ex_id: ExId {
+                id: self.id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::MotorReset,
+                res: 0,
+            },
+            len: 8,
+            data: [0; 8],
+        };
+
+        txd_pack(&mut self.port, &pack)?;
+        read_bytes(&mut self.port, &self.config)
+    }
+
+    pub fn send_start(&mut self) -> Result<MotorFeedback, std::io::Error> {
+        let pack = CanPack {
+            ex_id: ExId {
+                id: self.id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::MotorIn,
+                res: 0,
+            },
+            len: 8,
+            data: [0; 8],
+        };
+
+        txd_pack(&mut self.port, &pack)?;
+        read_bytes(&mut self.port, &self.config)
+    }
+
+    pub fn send_set_speed_limit(&mut self, speed: f32) -> Result<MotorFeedback, std::io::Error> {
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: self.id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::SdoWrite,
+                res: 0,
+            },
+            len: 8,
+            data: [0; 8],
+        };
+
+        let index: u16 = 0x7017;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        pack.data[4..8].copy_from_slice(&speed.to_le_bytes());
+
+        txd_pack(&mut self.port, &pack)?;
+        read_bytes(&mut self.port, &self.config)
+    }
+
+    pub fn send_set_location(&mut self, location: f32) -> Result<MotorFeedback, std::io::Error> {
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: self.id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::SdoWrite,
+                res: 0,
+            },
+            len: 8,
+            data: [0; 8],
+        };
+
+        let index: u16 = 0x7016;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        pack.data[4..8].copy_from_slice(&location.to_le_bytes());
+
+        txd_pack(&mut self.port, &pack)?;
+        read_bytes(&mut self.port, &self.config)
+    }
 }
