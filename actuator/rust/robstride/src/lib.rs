@@ -347,6 +347,21 @@ impl Motor {
         self.send_command(&pack)
     }
 
+    pub fn send_set_zero(&mut self) -> Result<(), std::io::Error> {
+        let pack = CanPack {
+            ex_id: ExId {
+                id: self.id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::MotorZero,
+                res: 0,
+            },
+            len: 8,
+            data: [1, 0, 0, 0, 0, 0, 0, 0], // Set first byte to 1 as per documentation
+        };
+
+        self.send_command(&pack)
+    }
+
     pub fn send_set_speed_limit(&mut self, speed: f32) -> Result<(), std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
