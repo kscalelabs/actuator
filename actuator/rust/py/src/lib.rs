@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
-use pyo3_stub_gen::define_stub_info_gatherer;
+use pyo3_stub_gen::{define_stub_info_gatherer, derive::gen_stub_pyfunction};
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 fn hello_world() -> PyResult<()> {
     println!("Hello, world!");
@@ -8,7 +9,7 @@ fn hello_world() -> PyResult<()> {
 }
 
 #[pymodule]
-fn lib(m: &Bound<PyModule>) -> PyResult<()> {
+fn py(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hello_world, m)?)?;
     Ok(())
 }

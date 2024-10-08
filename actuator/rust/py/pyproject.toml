@@ -3,8 +3,9 @@ requires = ["maturin>=1.1,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "lib"
+name = "py"
 requires-python = ">=3.9"
+
 
 [project.optional-dependencies]
 test = ["pytest", "pyright", "ruff"]
