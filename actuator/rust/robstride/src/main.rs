@@ -5,7 +5,7 @@ use std::time::Duration;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting program");
 
-    let mut motor = Motor::new("/dev/ttyUSB0", ROBSTRIDE01_CONFIG, 2)?;
+    let mut motor = Motor::new("/dev/ttyCH341USB0", ROBSTRIDE01_CONFIG, 1)?;
 
     motor.send_set_mode(RunMode::PositionMode)?;
     thread::sleep(Duration::from_millis(50));

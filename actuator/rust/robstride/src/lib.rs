@@ -180,7 +180,7 @@ fn txd_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::i
     buffer.extend_from_slice(&pack.data[..pack.len as usize]);
     buffer.extend_from_slice(b"\r\n");
 
-    println!("tx {:02X?}", buffer);
+    // println!("tx {:02X?}", buffer);
 
     port.write_all(&buffer)?;
     port.flush()?;
@@ -194,7 +194,7 @@ fn read_bytes(
     let mut buffer = [0u8; 17];
     let bytes_read = port.read(&mut buffer)?;
 
-    println!("rx {:02X?}", &buffer[..bytes_read]);
+    // println!("rx {:02X?}", &buffer[..bytes_read]);
 
     if bytes_read == 17 && buffer[0] == b'A' && buffer[1] == b'T' {
         let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]) >> 3;
@@ -226,13 +226,13 @@ fn read_bytes(
             faults,
         };
 
-        println!("Parsed data:");
-        println!("  Motor ID: {}", feedback.can_id);
-        println!("  Position: {}", feedback.position);
-        println!("  Velocity: {}", feedback.velocity);
-        println!("  Torque: {}", feedback.torque);
-        println!("  Mode: {:?}", feedback.mode);
-        println!("  Faults: {:?}", feedback.faults);
+        // println!("Parsed data:");
+        // println!("  Motor ID: {}", feedback.can_id);
+        // println!("  Position: {}", feedback.position);
+        // println!("  Velocity: {}", feedback.velocity);
+        // println!("  Torque: {}", feedback.torque);
+        // println!("  Mode: {:?}", feedback.mode);
+        // println!("  Faults: {:?}", feedback.faults);
 
         Ok(feedback)
     } else {
