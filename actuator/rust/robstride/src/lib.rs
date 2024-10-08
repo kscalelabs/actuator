@@ -108,8 +108,9 @@ pub enum CanComMode {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum MotorMode {
+    #[default]
     Reset = 0,
     Cali,
     Motor,
@@ -140,6 +141,7 @@ pub struct CanPack {
     pub data: [u8; 8],
 }
 
+#[derive(Debug, Default)]
 pub struct MotorFeedback {
     pub can_id: u16,
     pub position: f32,
@@ -267,7 +269,7 @@ fn read_bytes(
     }
 }
 
-struct Motor {
+pub struct Motor {
     port: Box<dyn SerialPort>,
     config: &'static MotorConfig,
     id: u8,
@@ -295,7 +297,7 @@ impl Motor {
         Ok(())
     }
 
-    fn send_set_mode(&mut self, run_mode: RunMode) -> Result<(), std::io::Error> {
+    pub fn send_set_mode(&mut self, run_mode: RunMode) -> Result<(), std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -315,7 +317,7 @@ impl Motor {
         Ok(())
     }
 
-    fn send_reset(&mut self) -> Result<(), std::io::Error> {
+    pub fn send_reset(&mut self) -> Result<(), std::io::Error> {
         let pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -330,7 +332,7 @@ impl Motor {
         self.send_command(&pack)
     }
 
-    fn send_start(&mut self) -> Result<(), std::io::Error> {
+    pub fn send_start(&mut self) -> Result<(), std::io::Error> {
         let pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -345,7 +347,7 @@ impl Motor {
         self.send_command(&pack)
     }
 
-    fn send_set_speed_limit(&mut self, speed: f32) -> Result<(), std::io::Error> {
+    pub fn send_set_speed_limit(&mut self, speed: f32) -> Result<(), std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -364,7 +366,7 @@ impl Motor {
         self.send_command(&pack)
     }
 
-    fn send_set_location(&mut self, location: f32) -> Result<(), std::io::Error> {
+    pub fn send_set_location(&mut self, location: f32) -> Result<(), std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -422,7 +424,7 @@ impl Motor {
         self.send_command(&pack)
     }
 
-    fn read_all_pending_responses(&mut self) -> Result<Vec<MotorFeedback>, std::io::Error> {
+    pub fn read_all_pending_responses(&mut self) -> Result<Vec<MotorFeedback>, std::io::Error> {
         let mut feedbacks = Vec::new();
         while self.pending_responses > 0 {
             match read_bytes(&mut self.port, self.config) {
@@ -439,6 +441,16 @@ impl Motor {
             }
         }
         Ok(feedbacks)
+    }
+
+    // Note that you need to set the RunMode to MitMode before calling this
+    pub fn send_position_control(&mut self, pos_set: f32, kp_set: f32) -> Result<(), std::io::Error> {
+        self.send_motor_control(pos_set, 0.0, kp_set, 0.0, 0.0)
+    }
+
+    // Note that you need to set the RunMode to MitMode before calling this
+    pub fn send_torque_control(&mut self, torque_set: f32) -> Result<(), std::io::Error> {
+        self.send_motor_control(0.0, 0.0, 0.0, 0.0, torque_set)
     }
 }
 
@@ -521,11 +533,11 @@ impl Motors {
         Ok(feedbacks)
     }
 
-    fn send_position_control(&mut self, pos_set: f32, kp_set: f32) -> Result<(), std::io::Error> {
-        self.send_motor_control(pos_set, 0.0, kp_set, 0.0, 0.0)
-    }
+    // fn send_position_control(&mut self, pos_set: f32, kp_set: f32) -> Result<(), std::io::Error> {
+    //     self.send_motor_control(pos_set, 0.0, kp_set, 0.0, 0.0)
+    // }
 
-    fn send_torque_control(&mut self, torque_set: f32) -> Result<(), std::io::Error> {
-        self.send_motor_control(0.0, 0.0, 0.0, 0.0, torque_set)
-    }
+    // fn send_torque_control(&mut self, torque_set: f32) -> Result<(), std::io::Error> {
+    //     self.send_motor_control(0.0, 0.0, 0.0, 0.0, torque_set)
+    // }
 }

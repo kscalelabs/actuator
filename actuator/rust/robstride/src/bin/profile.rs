@@ -1,4 +1,4 @@
-use robstride::{Motor, RunMode, ROBSTRIDE01_CONFIG};
+use robstride::{Motor, RunMode, ROBSTRIDE_CONFIGS};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::f32::consts::PI;
@@ -8,12 +8,20 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use ctrlc;
 
+fn calculate_torque(desired_position: f32, actual_position: f32, kp: f32, kd: f32, actual_velocity: f32) -> f32 {
+    let position_error = desired_position - actual_position;
+    let velocity_error = -actual_velocity;
+    kp * position_error + kd * velocity_error
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting sinusoidal profiling");
 
-    let mut motor = Motor::new("/dev/ttyCH341USB0", ROBSTRIDE01_CONFIG, 1)?;
+    // Use the updated MotorConfig from ROBSTRIDE_CONFIGS
+    let motor_config = ROBSTRIDE_CONFIGS.get("01").expect("Config not found");
+    let mut motor = Motor::new("/dev/ttyCH341USB0", motor_config, 1)?;
 
-    motor.send_set_mode(RunMode::PositionMode)?;
+    motor.send_set_mode(RunMode::MitMode)?;
     thread::sleep(Duration::from_millis(50));
 
     motor.send_reset()?;
@@ -45,11 +53,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let loop_start = Instant::now();
         let elapsed = start_time.elapsed().as_secs_f32();
         let desired_position = amplitude * (2.0 * PI * elapsed / period).sin();
-        let feedback = motor.send_set_location(desired_position)?;
 
-        let actual_position = feedback.position;
+        // Read feedback from the motor
+        let responses = motor.read_all_pending_responses()?;
+        let feedback = responses.get(0).unwrap();
 
-        writeln!(file, "{},{},{}", step, desired_position, actual_position)?;
+        let torque = calculate_torque(desired_position, feedback.position, 5.0, 0.1, feedback.velocity);
+
+        writeln!(file, "{},{},{}", step, desired_position, feedback.position)?;
+        println!("{},{},{},{}", step, desired_position, feedback.position, torque);
+
+        motor.send_torque_control(torque)?;
 
         let elapsed_loop = loop_start.elapsed();
         if elapsed_loop < loop_duration {
@@ -60,6 +74,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     motor.send_reset()?;
-    println!("Sinusoidal profiling finished");
+    println!("Sinusoidal profiling finished. Closed cleanly.");
     Ok(())
 }
