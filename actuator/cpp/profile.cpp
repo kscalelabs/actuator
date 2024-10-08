@@ -559,11 +559,21 @@ int main() {
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
+  // Open a CSV file to log the positions
+  std::ofstream logFile("position_log.csv");
+  if (!logFile.is_open()) {
+    std::cerr << "Error opening log file" << std::endl;
+    return -1;
+  }
+
+  // Write CSV header
+  logFile << "Step,Desired Position,Actual Position\n";
+
   // Sine wave torque control loop
   const double pi = 3.14159265358979323846;
   const double magnitude = pi / 2;
-  const double period = 2.0;
-  const double duration = 10.0;
+  const double period = 5.0;
+  const double duration = 20.0;
   const double kp = 5;
   const double kd = 0.2;
 
@@ -572,38 +582,43 @@ int main() {
   int instruction_count = 0;
 
   double desired_torque = 0.0;
+  double desired_position = 0.0;
+  int step = 0; // Initialize step counter
+
+  const std::chrono::milliseconds loop_duration(4); // 4 milliseconds for 250 Hz
 
   while (elapsed_time < duration) {
+    auto loop_start_time = std::chrono::steady_clock::now();
+
     if (feedback.isSet) {
-      double desired_position =
-          magnitude * std::sin(2 * pi * elapsed_time / period);
+      desired_position = magnitude * std::sin(2 * pi * elapsed_time / period);
       double current_position = feedback.position;
       double position_error = desired_position - current_position;
       desired_torque = kp * position_error + kd * (0 - feedback.velocity);
- 
-      std::cout << "Time: " << std::fixed << std::setprecision(2)
-                << elapsed_time << "s, "
-                << "Desired pos: " << std::setprecision(3) << desired_position
-                << ", "
-                << "Current pos: " << std::setprecision(3) << current_position
-                << ", "
-                << "Desired torque: " << std::setprecision(3) << desired_torque
-                << std::endl;
+
+      // Log the desired and current positions in CSV format
+      logFile << step << "," << desired_position << "," << current_position << "\n";
+      step++; // Increment step counter
     }
 
     // Send torque control command
     feedback = send_torque_control(MOTOR_ID, desired_torque);
     instruction_count++;
 
-    // Sleep for a short interval to avoid overwhelming the motor
-    // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    // Calculate elapsed time for the loop
+    auto loop_end_time = std::chrono::steady_clock::now();
+    auto loop_elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(loop_end_time - loop_start_time);
+
+    // Sleep for the remaining time to maintain 250 Hz
+    if (loop_elapsed_time < loop_duration) {
+      std::this_thread::sleep_for((loop_duration - loop_elapsed_time)*0.99);
+    }
 
     // Update elapsed time
     auto current_time = std::chrono::steady_clock::now();
-    elapsed_time =
-        std::chrono::duration<double>(current_time - start_time).count();
+    elapsed_time = std::chrono::duration<double>(current_time - start_time).count();
     if (elapsed_time > 0) {
-        std::cout << "Instructions per second: " << (float)instruction_count / elapsed_time << std::endl;
+      std::cout << "Instructions per second: " << (float)instruction_count / elapsed_time << std::endl;
     }
   }
 
@@ -612,6 +627,9 @@ int main() {
   if (feedback.isSet) {
     std::cout << "Reset feedback received" << std::endl;
   }
+
+  // Close the CSV file
+  logFile.close();
 
   // Close the serial port when done
   std::cout << "Closing serial port" << std::endl;
