@@ -1,6 +1,7 @@
 use serialport::SerialPort;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::thread;
 use std::time::Duration;
 
 #[macro_use]
@@ -270,7 +271,6 @@ struct Motor {
     port: Box<dyn SerialPort>,
     config: &'static MotorConfig,
     id: u8,
-    current_mode: RunMode,
     pending_responses: usize,
 }
 
@@ -285,7 +285,6 @@ impl Motor {
             port,
             config,
             id,
-            current_mode: RunMode::UnsetMode,
             pending_responses: 0,
         })
     }
@@ -297,10 +296,6 @@ impl Motor {
     }
 
     fn send_set_mode(&mut self, run_mode: RunMode) -> Result<(), std::io::Error> {
-        if self.current_mode == run_mode {
-            return Ok(());
-        }
-
         let mut pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -317,7 +312,6 @@ impl Motor {
         pack.data[4] = run_mode as u8;
 
         self.send_command(&pack)?;
-        self.current_mode = run_mode;
         Ok(())
     }
 
@@ -371,8 +365,6 @@ impl Motor {
     }
 
     fn send_set_location(&mut self, location: f32) -> Result<(), std::io::Error> {
-        self.send_set_mode(RunMode::PositionMode)?;
-
         let mut pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -399,8 +391,6 @@ impl Motor {
         kd_set: f32,
         torque_set: f32,
     ) -> Result<(), std::io::Error> {
-        self.send_set_mode(RunMode::MitMode)?;
-
         let mut pack = CanPack {
             ex_id: ExId {
                 id: self.id,
@@ -432,14 +422,6 @@ impl Motor {
         self.send_command(&pack)
     }
 
-    fn send_position_control(&mut self, pos_set: f32, kp_set: f32) -> Result<(), std::io::Error> {
-        self.send_motor_control(pos_set, 0.0, kp_set, 0.0, 0.0)
-    }
-
-    fn send_torque_control(&mut self, torque_set: f32) -> Result<(), std::io::Error> {
-        self.send_motor_control(0.0, 0.0, 0.0, 0.0, torque_set)
-    }
-
     fn read_all_pending_responses(&mut self) -> Result<Vec<MotorFeedback>, std::io::Error> {
         let mut feedbacks = Vec::new();
         while self.pending_responses > 0 {
@@ -469,6 +451,7 @@ fn float_to_uint(x: f32, x_min: f32, x_max: f32, bits: u8) -> u16 {
 
 pub struct Motors {
     motors: Vec<Motor>,
+    current_mode: RunMode,
 }
 
 impl Motors {
@@ -481,13 +464,29 @@ impl Motors {
             .map(|(config, id)| Motor::new(tty_port, config, *id))
             .collect::<Result<Vec<Motor>, Box<dyn std::error::Error>>>()?;
 
-        Ok(Motors { motors })
+        Ok(Motors {
+            motors,
+            current_mode: RunMode::UnsetMode,
+        })
+    }
+
+    pub fn send_set_mode(&mut self, run_mode: RunMode) -> Result<(), std::io::Error> {
+        if self.current_mode == run_mode {
+            return Ok(());
+        }
+        for motor in &mut self.motors {
+            motor.send_set_mode(run_mode)?;
+        }
+        self.current_mode = run_mode;
+        Ok(())
     }
 
     pub fn send_set_locations(
         &mut self,
         locations: &HashMap<u8, f32>,
     ) -> Result<(), std::io::Error> {
+        self.send_set_mode(RunMode::PositionMode)?;
+
         for motor in &mut self.motors {
             if let Some(&location) = locations.get(&motor.id) {
                 motor.send_set_location(location)?;
@@ -505,6 +504,8 @@ impl Motors {
                 motor.send_set_speed_limit(speed_limit)?;
             }
         }
+        // Sleep
+        thread::sleep(Duration::from_millis(50));
         Ok(())
     }
 
@@ -518,5 +519,13 @@ impl Motors {
             }
         }
         Ok(feedbacks)
+    }
+
+    fn send_position_control(&mut self, pos_set: f32, kp_set: f32) -> Result<(), std::io::Error> {
+        self.send_motor_control(pos_set, 0.0, kp_set, 0.0, 0.0)
+    }
+
+    fn send_torque_control(&mut self, torque_set: f32) -> Result<(), std::io::Error> {
+        self.send_motor_control(0.0, 0.0, 0.0, 0.0, torque_set)
     }
 }
