@@ -1,5 +1,5 @@
 [package]
-name = "lib"
+name = "py"
 version.workspace = true
 edition.workspace = true
 description.workspace = true
@@ -9,7 +9,7 @@ license.workspace = true
 readme.workspace = true
 
 [lib]
-name = "lib"
+name = "py"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

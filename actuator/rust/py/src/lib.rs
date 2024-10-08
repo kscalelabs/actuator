@@ -8,7 +8,7 @@ fn hello_world() -> PyResult<()> {
 }
 
 #[pymodule]
-fn lib(m: &Bound<PyModule>) -> PyResult<()> {
+fn py(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hello_world, m)?)?;
     Ok(())
 }

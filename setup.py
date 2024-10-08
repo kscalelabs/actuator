@@ -33,8 +33,8 @@ setup(
     url="https://github.com/kscalelabs/actuator",
     rust_extensions=[
         RustExtension(
-            target="actuator.rust.lib",
-            path="actuator/rust/Cargo.toml",
+            target="actuator.rust.py",
+            path="actuator/rust/py/Cargo.toml",
             binding=Binding.PyO3,
         ),
     ],

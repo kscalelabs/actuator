@@ -14,3 +14,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serialport = "4.5.1"
+lazy_static = "1.4.0"
