@@ -87,8 +87,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // Send torque commands to the motors
         motors.send_torque_control(1, torque_1 as f32)?;
-        std::thread::sleep(Duration::from_millis(3)); // Sleep to prevent overwhelming the bus
+        std::thread::sleep(Duration::from_millis(4)); // Sleep to prevent overwhelming the bus
         motors.send_torque_control(2, torque_2 as f32)?;
+        std::thread::sleep(Duration::from_millis(4));
 
         // Increment the command counter
         command_count += 2; // Two commands sent per loop iteration
@@ -108,10 +109,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Calculate and print the command rate
         let commands_per_second = command_count as f32 / elapsed_time;
         println!("Commands per second: {:.2}", commands_per_second);
-
-        // Sleep for a short duration to prevent spamming the loop
-        std::thread::sleep(Duration::from_millis(3));
     }
+
+    let elapsed_time = start_time.elapsed().as_secs_f32();
+
+    println!("Done");
+    println!("Average control frequency: {:.2} Hz", (command_count as f32 / elapsed_time) / 2.0); // Divide by 2 because two commands are sent per loop
 
     // Reset motors on exit
     motors.send_reset(1)?;
