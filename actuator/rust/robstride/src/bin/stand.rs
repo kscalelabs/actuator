@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Create Motors instances with the port names
     let mut motors_1 = Motors::new("/dev/ttyCH341USB0", motors_map_1)?;
-    let mut motors_2 = Motors::new("/dev/ttyCH341USB1", motors_map_2)?;
+    // let mut motors_2 = Motors::new("/dev/ttyCH341USB1", motors_map_2)?;
 
     // Function to initialize motors
     let initialize_motors = |motors: &mut Motors| -> Result<(), Box<dyn Error>> {
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let set_location = |motors: &mut Motors, location: f32| -> Result<(), Box<dyn Error>> {
         for id in 1..=5 {
-            motors.send_set_location(id, location)?;
+            motors.send_position_control(id, location, 5.0)?;
             std::thread::sleep(Duration::from_millis(50));
         }
         motors.read_all_pending_responses()?;
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Initialize both groups of motors
     initialize_motors(&mut motors_1)?;
-    initialize_motors(&mut motors_2)?;
+    // initialize_motors(&mut motors_2)?;
 
     println!("Motors initialized and set to stand position.");
 
@@ -70,13 +70,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     while running.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(50));
         set_location(&mut motors_1, 0.0)?;
-        set_location(&mut motors_2, 0.0)?;
+        // set_location(&mut motors_2, 0.0)?;
     }
 
     // Reset motors on exit
     for id in 1..=5 {
         motors_1.send_reset(id)?;
-        motors_2.send_reset(id)?;
+        // motors_2.send_reset(id)?;
         std::thread::sleep(Duration::from_millis(50));
     }
 
