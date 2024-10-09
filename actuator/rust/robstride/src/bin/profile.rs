@@ -97,15 +97,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Read feedback from the motors
         motors.read_all_pending_responses()?;
 
-        // // Print the latest feedback for each motor
-        // if let Some(feedback) = motors.get_latest_feedback(1) {
-        //     println!("Motor 1 Feedback: {:?}", feedback);
-        // }
-
-        // if let Some(feedback) = motors.get_latest_feedback(2) {
-        //     println!("Motor 2 Feedback: {:?}", feedback);
-        // }
-
         // Calculate and print the command rate
         let commands_per_second = command_count as f32 / elapsed_time;
         println!("Commands per second: {:.2}", commands_per_second);
