@@ -436,8 +436,8 @@ impl Motors {
         }
     }
 
-    pub fn send_position_control(&mut self, motor_id: u8, pos_set: f32, kp_set: f32) -> Result<(), std::io::Error> {
-        self.send_motor_control(motor_id, pos_set, 0.0, kp_set, 0.0, 0.0)
+    pub fn send_position_control(&mut self, motor_id: u8, pos_set: f32, kp_set: f32, kd_set: f32) -> Result<(), std::io::Error> {
+        self.send_motor_control(motor_id, pos_set, 0.0, kp_set, kd_set, 0.0)
     }
 
     pub fn send_torque_control(&mut self, motor_id: u8, torque_set: f32) -> Result<(), std::io::Error> {

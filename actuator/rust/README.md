@@ -23,3 +23,17 @@ To run the profiling script:
 ```bash
 cargo run --bin profile
 ```
+
+To run the stand script:
+
+(make sure that the right leg is ttyCH341USB0 and the left leg is ttyCH341USB1)
+
+```bash
+cargo run --bin stand
+```
+
+Also set the baud rate to 921600 with
+
+```bash
+sudo stty -F /dev/ttyCH341USB0 921600
+```
