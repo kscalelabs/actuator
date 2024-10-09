@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use ctrlc;
 
-const TEST_ID: u8 = 1;
+const TEST_ID: u8 = 2;
 fn main() -> Result<(), Box<dyn Error>> {
     // Create an atomic flag to handle SIGINT
     let running = Arc::new(AtomicBool::new(true));
@@ -19,11 +19,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     // Create motor instances
-    let motor = Motor::new(&ROBSTRIDE_CONFIGS["04"], 1);
+    let motor = Motor::new(&ROBSTRIDE_CONFIGS["01"], TEST_ID);
 
     // Insert motors into a HashMap
     let mut motors_map = HashMap::new();
-    motors_map.insert(1, motor);
+    motors_map.insert(TEST_ID, motor);
 
     // Create a Motors instance with the port name
     let mut motors = Motors::new("/dev/ttyCH341USB0", motors_map)?; // Adjust the device path as needed
@@ -58,10 +58,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let desired_position_1 = amplitude * (elapsed_time * 2.0 * PI / period).sin();
 
         // Get current feedback for each motor
-        let current_position_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.position) as f32;
+        let current_position_1 = motors.get_latest_feedback(TEST_ID).map_or(0.0, |f| f.position) as f32;
 
         // Calculate velocity (derivative of position)
-        let current_velocity_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.velocity) as f32;
+        let current_velocity_1 = motors.get_latest_feedback(TEST_ID).map_or(0.0, |f| f.velocity) as f32;
 
         // Calculate torque using PD control
         let torque_1 = kp_04 * (desired_position_1 - current_position_1) - kd_04 * current_velocity_1;
@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Average control frequency: {:.2} Hz", (command_count as f32 / elapsed_time));
 
     // Reset motors on exit
-    motors.send_reset(1)?;
+    motors.send_reset(TEST_ID)?;
 
     Ok(())
 }
