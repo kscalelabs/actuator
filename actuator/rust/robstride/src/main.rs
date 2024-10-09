@@ -28,6 +28,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create a Motors instance with the port name
     let mut motors = Motors::new("/dev/ttyCH341USB0", motors_map)?; // Adjust the device path as needed
 
+    std::thread::sleep(Duration::from_millis(50));
+    motors.send_reset(TEST_ID)?;
+    std::thread::sleep(Duration::from_millis(50));
+    motors.send_set_zero(TEST_ID)?;
+    std::thread::sleep(Duration::from_millis(50));
     motors.send_reset(TEST_ID)?;
     std::thread::sleep(Duration::from_millis(50));
     motors.send_set_mode(TEST_ID, RunMode::MitMode)?;
@@ -36,7 +41,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::thread::sleep(Duration::from_millis(50));
     motors.send_set_speed_limit(TEST_ID, 10.0)?;
     std::thread::sleep(Duration::from_millis(50));
-    motors.send_set_zero(TEST_ID)?;
 
     motors.read_all_pending_responses()?;
 
@@ -48,7 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let kd_04 = 0.1;
 
     // Define period and amplitude
-    let period = 2.0;
+    let period = 5.0;
     let amplitude = PI;
 
     while running.load(Ordering::SeqCst) && start_time.elapsed() < Duration::new(20, 0) {
@@ -65,6 +69,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // Calculate torque using PD control
         let torque_1 = kp_04 * (desired_position_1 - current_position_1) - kd_04 * current_velocity_1;
+
+        let torque_1 = torque_1.clamp(-3.0, 3.0);
 
         // Send torque commands to the motors
         motors.send_torque_control(TEST_ID, torque_1 as f32)?;
