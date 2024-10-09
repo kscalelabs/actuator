@@ -1,7 +1,7 @@
 use robstride::{Motor, Motors, RunMode, ROBSTRIDE_CONFIGS};
 use std::collections::HashMap;
 use std::error::Error;
-use std::f64::consts::PI;
+use std::f32::consts::PI;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -57,34 +57,37 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut command_count = 0; // Initialize a counter for commands
 
     // PD controller parameters
-    let kp = 3.0;
-    let kd = 0.0;
+    let kp_04 = 4.0;
+    let kd_04 = 0.1;
+    let kp_01 = 1.0;
+    let kd_01 = 0.1;
 
     // Define period and amplitude
-    let period = 10.0;
-    let amplitude = PI / 2.0;
+    let period = 2.0;
+    let amplitude = PI;
 
-    while running.load(Ordering::SeqCst) && start_time.elapsed() < Duration::new(10, 0) {
-        let elapsed_time = start_time.elapsed().as_secs_f64();
+    while running.load(Ordering::SeqCst) && start_time.elapsed() < Duration::new(20, 0) {
+        let elapsed_time = start_time.elapsed().as_secs_f32();
 
         // Calculate desired positions using a sinusoidal function with specified period and amplitude
         let desired_position_1 = amplitude * (elapsed_time * 2.0 * PI / period).sin();
         let desired_position_2 = -amplitude * (elapsed_time * 2.0 * PI / period).sin();
 
         // Get current feedback for each motor
-        let current_position_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.position) as f64;
-        let current_position_2 = motors.get_latest_feedback(2).map_or(0.0, |f| f.position) as f64;
+        let current_position_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.position) as f32;
+        let current_position_2 = motors.get_latest_feedback(2).map_or(0.0, |f| f.position) as f32;
 
         // Calculate velocity (derivative of position)
-        let current_velocity_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.velocity) as f64;
-        let current_velocity_2 = motors.get_latest_feedback(2).map_or(0.0, |f| f.velocity) as f64;
+        let current_velocity_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.velocity) as f32;
+        let current_velocity_2 = motors.get_latest_feedback(2).map_or(0.0, |f| f.velocity) as f32;
 
         // Calculate torque using PD control
-        let torque_1 = kp * (desired_position_1 - current_position_1) - kd * current_velocity_1;
-        let torque_2 = kp * (desired_position_2 - current_position_2) - kd * current_velocity_2;
+        let torque_1 = kp_04 * (desired_position_1 - current_position_1) - kd_04 * current_velocity_1;
+        let torque_2 = kp_01 * (desired_position_2 - current_position_2) - kd_01 * current_velocity_2;
 
         // Send torque commands to the motors
         motors.send_torque_control(1, torque_1 as f32)?;
+        std::thread::sleep(Duration::from_millis(3)); // Sleep to prevent overwhelming the bus
         motors.send_torque_control(2, torque_2 as f32)?;
 
         // Increment the command counter
@@ -93,21 +96,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Read feedback from the motors
         motors.read_all_pending_responses()?;
 
-        // Print the latest feedback for each motor
-        if let Some(feedback) = motors.get_latest_feedback(1) {
-            println!("Motor 1 Feedback: {:?}", feedback);
-        }
+        // // Print the latest feedback for each motor
+        // if let Some(feedback) = motors.get_latest_feedback(1) {
+        //     println!("Motor 1 Feedback: {:?}", feedback);
+        // }
 
-        if let Some(feedback) = motors.get_latest_feedback(2) {
-            println!("Motor 2 Feedback: {:?}", feedback);
-        }
+        // if let Some(feedback) = motors.get_latest_feedback(2) {
+        //     println!("Motor 2 Feedback: {:?}", feedback);
+        // }
 
         // Calculate and print the command rate
-        let commands_per_second = command_count as f64 / elapsed_time;
+        let commands_per_second = command_count as f32 / elapsed_time;
         println!("Commands per second: {:.2}", commands_per_second);
 
         // Sleep for a short duration to prevent spamming the loop
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(3));
     }
 
     // Reset motors on exit
