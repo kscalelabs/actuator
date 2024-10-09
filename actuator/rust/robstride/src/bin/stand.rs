@@ -1,12 +1,12 @@
 // Script to freeze the legs on Stompy Pro (5 dof per leg). Each motor has a sequentially increasing ID from 1 to 5.
 
+use ctrlc;
 use robstride::{Motor, Motors, ROBSTRIDE_CONFIGS};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use ctrlc;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Create an atomic flag to handle SIGINT
@@ -63,14 +63,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(())
     };
 
-    let set_location = |motors: &mut Motors, location: f32, kp: f32, kd: f32| -> Result<(), Box<dyn Error>> {
-        for id in 1..=5 {
-            motors.send_position_control(id, location, kp, kd)?;
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        motors.read_all_pending_responses()?;
-        Ok(())
-    };
+    let set_location =
+        |motors: &mut Motors, location: f32, kp: f32, kd: f32| -> Result<(), Box<dyn Error>> {
+            for id in 1..=5 {
+                motors.send_position_control(id, location, kp, kd)?;
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            motors.read_all_pending_responses()?;
+            Ok(())
+        };
 
     // Initialize both groups of motors
     std::thread::sleep(Duration::from_millis(100));

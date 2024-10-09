@@ -1,3 +1,4 @@
+use ctrlc;
 use robstride::{Motor, Motors, RunMode, ROBSTRIDE_CONFIGS};
 use std::collections::HashMap;
 use std::error::Error;
@@ -5,7 +6,6 @@ use std::f32::consts::PI;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use ctrlc;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Create an atomic flag to handle SIGINT
@@ -82,8 +82,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let current_velocity_2 = motors.get_latest_feedback(2).map_or(0.0, |f| f.velocity) as f32;
 
         // Calculate torque using PD control
-        let torque_1 = kp_04 * (desired_position_1 - current_position_1) - kd_04 * current_velocity_1;
-        let torque_2 = kp_01 * (desired_position_2 - current_position_2) - kd_01 * current_velocity_2;
+        let torque_1 =
+            kp_04 * (desired_position_1 - current_position_1) - kd_04 * current_velocity_1;
+        let torque_2 =
+            kp_01 * (desired_position_2 - current_position_2) - kd_01 * current_velocity_2;
 
         // Send torque commands to the motors
         motors.send_torque_control(1, torque_1 as f32)?;
@@ -105,7 +107,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let elapsed_time = start_time.elapsed().as_secs_f32();
 
     println!("Done");
-    println!("Average control frequency: {:.2} Hz", (command_count as f32 / elapsed_time) / 2.0); // Divide by 2 because two commands are sent per loop
+    println!(
+        "Average control frequency: {:.2} Hz",
+        (command_count as f32 / elapsed_time) / 2.0
+    ); // Divide by 2 because two commands are sent per loop
 
     // Reset motors on exit
     motors.send_reset(1)?;

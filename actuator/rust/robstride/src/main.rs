@@ -1,17 +1,19 @@
-use robstride::{Motor, Motors, RunMode, ROBSTRIDE_CONFIGS};
-use std::collections::HashMap;
+use ctrlc;
+use robstride::{MotorInfo, MotorType, Motors, RunMode};
 use std::error::Error;
 use std::f32::consts::PI;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use ctrlc;
 
-const TEST_ID: u8 = 1;
+const TEST_ID: u8 = 2;
+const MAX_SECONDS: u64 = 5;
+const MAX_TORQUE: f32 = 1.0;
+
 fn main() -> Result<(), Box<dyn Error>> {
     // Create an atomic flag to handle SIGINT
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    let r: Arc<AtomicBool> = running.clone();
 
     // Set up the SIGINT handler
     ctrlc::set_handler(move || {
@@ -19,14 +21,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     // Create motor instances
-    let motor = Motor::new(&ROBSTRIDE_CONFIGS["04"], 1);
-
-    // Insert motors into a HashMap
-    let mut motors_map = HashMap::new();
-    motors_map.insert(1, motor);
-
-    // Create a Motors instance with the port name
-    let mut motors = Motors::new("/dev/ttyCH341USB0", motors_map)?; // Adjust the device path as needed
+    let mut motors = Motors::new(
+        "/dev/ttyUSB0",
+        vec![MotorInfo {
+            id: TEST_ID,
+            motor_type: MotorType::Type01,
+        }],
+    )?; // Adjust the device path as needed
 
     motors.send_reset(TEST_ID)?;
     std::thread::sleep(Duration::from_millis(50));
@@ -44,44 +45,35 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut command_count = 0; // Initialize a counter for commands
 
     // PD controller parameters
-    let kp_04 = 4.0;
+    let kp_04 = 0.5;
     let kd_04 = 0.1;
 
     // Define period and amplitude
-    let period = 2.0;
-    let amplitude = PI;
+    let period = 1.0;
+    let amplitude = PI / 2.0;
 
-    while running.load(Ordering::SeqCst) && start_time.elapsed() < Duration::new(20, 0) {
+    while running.load(Ordering::SeqCst) && start_time.elapsed() < Duration::new(MAX_SECONDS, 0) {
         let elapsed_time = start_time.elapsed().as_secs_f32();
 
-        // Calculate desired positions using a sinusoidal function with specified period and amplitude
-        let desired_position_1 = amplitude * (elapsed_time * 2.0 * PI / period).sin();
-
-        // Get current feedback for each motor
-        let current_position_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.position) as f32;
-
-        // Calculate velocity (derivative of position)
-        let current_velocity_1 = motors.get_latest_feedback(1).map_or(0.0, |f| f.velocity) as f32;
-
-        // Calculate torque using PD control
-        let torque_1 = kp_04 * (desired_position_1 - current_position_1) - kd_04 * current_velocity_1;
-
-        // Send torque commands to the motors
-        motors.send_torque_control(TEST_ID, torque_1 as f32)?;
+        let desired_position = amplitude * (elapsed_time * 2.0 * PI / period).sin();
+        let current_position = motors
+            .get_latest_feedback(TEST_ID)
+            .map_or(0.0, |f| f.position) as f32;
+        let current_velocity = motors
+            .get_latest_feedback(TEST_ID)
+            .map_or(0.0, |f| f.velocity) as f32;
+        let torque = (kp_04 * (desired_position - current_position) - kd_04 * current_velocity)
+            .clamp(-MAX_TORQUE, MAX_TORQUE);
+        motors.send_torque_control(TEST_ID, torque as f32)?;
         std::thread::sleep(Duration::from_millis(4)); // Sleep to prevent overwhelming the bus
 
-        // Increment the command counter
-        command_count += 1; // One command sent per loop iteration
-
-        // Read feedback from the motors
+        command_count += 1;
         motors.read_all_pending_responses()?;
 
-        // Print the latest feedback for each motor
         if let Some(feedback) = motors.get_latest_feedback(TEST_ID) {
             println!("Motor 1 Feedback: {:?}", feedback);
         }
 
-        // Calculate and print the command rate
         let commands_per_second = command_count as f32 / elapsed_time;
         println!("Commands per second: {:.2}", commands_per_second);
     }
@@ -89,10 +81,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let elapsed_time = start_time.elapsed().as_secs_f32();
 
     println!("Done");
-    println!("Average control frequency: {:.2} Hz", (command_count as f32 / elapsed_time));
+    println!(
+        "Average control frequency: {:.2} Hz",
+        (command_count as f32 / elapsed_time)
+    );
 
-    // Reset motors on exit
-    motors.send_reset(1)?;
+    motors.send_reset(TEST_ID)?;
 
     Ok(())
 }
