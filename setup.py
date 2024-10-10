@@ -25,6 +25,10 @@ with open("actuator/__init__.py", "r", encoding="utf-8") as fh:
 assert version_re is not None, "Could not find version in actuator/__init__.py"
 version: str = version_re.group(1)
 
+package_data = ["py.typed", "requirements.txt", "requirements-dev.txt"]
+for ext in ("pyi", "rs", "toml", "so"):
+    package_data.extend(glob.iglob(f"actuator/**/*.{ext}", recursive=True))
+
 
 setup(
     name="actuator",
@@ -48,8 +52,5 @@ setup(
     tests_require=requirements_dev,
     extras_require={"dev": requirements_dev},
     include_package_data=True,
-    package_data={
-        "actuator": ["py.typed", "requirements.txt", "requirements-dev.txt"]
-        + [i for ext in ("pyi", "rs", "toml", "so") for i in glob.glob(f"actuator/rust/**/*.{ext}")],
-    },
+    package_data={"actuator": package_data},
 )
