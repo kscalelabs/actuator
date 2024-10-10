@@ -3,7 +3,7 @@
 import math
 import time
 
-from actuator.rust.py import PyMotors
+from actuator.rust.py import PyRobstrideMotors
 
 # Constants (you may need to adjust these based on your Python implementation)
 RUN_TIME = 3.0  # Assuming 10 seconds, adjust as needed
@@ -12,7 +12,7 @@ MAX_TORQUE = 1.0  # Adjust based on your motor specifications
 PI = math.pi
 
 
-def run_motion_test(motors: PyMotors) -> None:
+def run_motion_test(motors: PyRobstrideMotors) -> None:
     motors.send_reset()
     motors.send_start()
 
@@ -54,9 +54,9 @@ def run_motion_test(motors: PyMotors) -> None:
 
 
 def main() -> None:
-    motors = PyMotors(
+    motors = PyRobstrideMotors(
         port_name="/dev/ttyUSB0",
-        motor_infos=[(TEST_ID, "Type01")],
+        motor_infos=[(TEST_ID, "01")],
     )
     run_motion_test(motors)
 

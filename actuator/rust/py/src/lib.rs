@@ -1,41 +1,44 @@
 use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use robstride::{MotorFeedback, MotorInfo, MotorType, Motors};
+use robstride::{
+    MotorFeedback as RobstrideMotorFeedback, MotorInfo as RobstrideMotorInfo,
+    MotorType as RobstrideMotorType, Motors as RobstrideMotors,
+};
 use std::collections::HashMap;
 
 #[gen_stub_pyclass]
 #[pyclass]
-struct PyMotors {
-    inner: Motors,
+struct PyRobstrideMotors {
+    inner: RobstrideMotors,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl PyMotors {
+impl PyRobstrideMotors {
     #[new]
     fn new(port_name: String, motor_infos: Vec<(u8, String)>) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
             .map(|(id, type_str)| {
                 let motor_type = match type_str.as_str() {
-                    "Type01" => MotorType::Type01,
-                    "Type03" => MotorType::Type03,
-                    "Type04" => MotorType::Type04,
+                    "01" => RobstrideMotorType::Type01,
+                    "03" => RobstrideMotorType::Type03,
+                    "04" => RobstrideMotorType::Type04,
                     _ => {
                         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                             "Invalid motor type",
                         ))
                     }
                 };
-                Ok(MotorInfo { id, motor_type })
+                Ok(RobstrideMotorInfo { id, motor_type })
             })
-            .collect::<PyResult<Vec<MotorInfo>>>()?;
+            .collect::<PyResult<Vec<RobstrideMotorInfo>>>()?;
 
-        let motors = Motors::new(&port_name, motor_infos)
+        let motors = RobstrideMotors::new(&port_name, motor_infos)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-        Ok(PyMotors { inner: motors })
+        Ok(PyRobstrideMotors { inner: motors })
     }
 
     fn send_get_mode(&mut self) -> PyResult<HashMap<u8, String>> {
@@ -47,7 +50,7 @@ impl PyMotors {
             .collect()
     }
 
-    fn send_set_zero(&mut self) -> PyResult<HashMap<u8, PyMotorFeedback>> {
+    fn send_set_zero(&mut self) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
         self.inner
             .send_set_zero()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
@@ -56,7 +59,7 @@ impl PyMotors {
             .collect()
     }
 
-    fn send_reset(&mut self) -> PyResult<HashMap<u8, PyMotorFeedback>> {
+    fn send_reset(&mut self) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
         self.inner
             .send_reset()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
@@ -65,7 +68,7 @@ impl PyMotors {
             .collect()
     }
 
-    fn send_start(&mut self) -> PyResult<HashMap<u8, PyMotorFeedback>> {
+    fn send_start(&mut self) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
         self.inner
             .send_start()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
@@ -77,7 +80,7 @@ impl PyMotors {
     fn send_torque_controls(
         &mut self,
         torque_sets: HashMap<u8, f32>,
-    ) -> PyResult<HashMap<u8, PyMotorFeedback>> {
+    ) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
         self.inner
             .send_torque_controls(&torque_sets)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
@@ -86,7 +89,7 @@ impl PyMotors {
             .collect()
     }
 
-    fn get_latest_feedback(&self) -> HashMap<u8, PyMotorFeedback> {
+    fn get_latest_feedback(&self) -> HashMap<u8, PyRobstrideMotorFeedback> {
         self.inner
             .get_latest_feedback()
             .into_iter()
@@ -94,7 +97,7 @@ impl PyMotors {
             .collect()
     }
 
-    fn get_latest_feedback_for(&self, motor_id: u8) -> PyResult<PyMotorFeedback> {
+    fn get_latest_feedback_for(&self, motor_id: u8) -> PyResult<PyRobstrideMotorFeedback> {
         self.inner
             .get_latest_feedback_for(motor_id)
             .map(|feedback| feedback.clone().into())
@@ -105,7 +108,7 @@ impl PyMotors {
 #[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
-struct PyMotorFeedback {
+struct PyRobstrideMotorFeedback {
     #[pyo3(get)]
     can_id: u8,
     #[pyo3(get)]
@@ -120,9 +123,9 @@ struct PyMotorFeedback {
     faults: u16,
 }
 
-impl From<MotorFeedback> for PyMotorFeedback {
-    fn from(feedback: MotorFeedback) -> Self {
-        PyMotorFeedback {
+impl From<RobstrideMotorFeedback> for PyRobstrideMotorFeedback {
+    fn from(feedback: RobstrideMotorFeedback) -> Self {
+        PyRobstrideMotorFeedback {
             can_id: feedback.can_id,
             position: feedback.position,
             velocity: feedback.velocity,
@@ -135,8 +138,8 @@ impl From<MotorFeedback> for PyMotorFeedback {
 
 #[pymodule]
 fn py(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_class::<PyMotors>()?;
-    m.add_class::<PyMotorFeedback>()?;
+    m.add_class::<PyRobstrideMotors>()?;
+    m.add_class::<PyRobstrideMotorFeedback>()?;
     Ok(())
 }
 
