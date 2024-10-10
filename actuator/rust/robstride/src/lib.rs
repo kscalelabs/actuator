@@ -667,6 +667,33 @@ impl Motors {
             .get(&motor_id)
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "No feedback found"))
     }
+
+    pub fn set_new_id(&mut self, motor_id: u8, new_motor_id: u8) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+
+        for id in motor_ids {
+            if id == motor_id {
+                let mut pack = CanPack {
+                    ex_id: ExId {
+                    id: motor_id,
+                    data: 0,
+                    mode: CanComMode::MotorId,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+                };
+                
+                pack.ex_id.data = ((new_motor_id as u16) << 8) | (motor_id as u16);
+                self.send_command(&pack);
+                break;
+            } 
+        };
+
+        // After sending the reset command, sleep for a short time.
+        std::thread::sleep(self.sleep_time);
+        self.read_all_pending_responses()
+    }
 }
 
 fn get_default_kp_kd_values(motor_infos: &HashMap<u8, MotorType>) -> HashMap<u8, (f32, f32)> {

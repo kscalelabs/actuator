@@ -99,6 +99,11 @@ impl PyRobstrideMotors {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
+    fn set_new_id(&mut self, motor_id: u8, new_motor_id: u8) -> PyResult<()> {
+        self.inner.set_new_id(motor_id, new_motor_id);
+        Ok(())
+    }
+
     fn __repr__(&self) -> PyResult<String> {
         let motor_count = self.inner.get_latest_feedback().len();
         Ok(format!("PyRobstrideMotors(motor_count={})", motor_count))
