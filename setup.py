@@ -38,8 +38,8 @@ setup(
     url="https://github.com/kscalelabs/actuator",
     rust_extensions=[
         RustExtension(
-            target="actuator.rust.py",
-            path="actuator/rust/py/Cargo.toml",
+            target="actuator.rust.bindings",
+            path="actuator/rust/bindings/Cargo.toml",
             binding=Binding.PyO3,
         ),
     ],
@@ -49,8 +49,8 @@ setup(
     long_description_content_type="text/markdown",
     python_requires=">=3.11",
     install_requires=requirements,
-    tests_require=requirements_dev,
     extras_require={"dev": requirements_dev},
     include_package_data=True,
     package_data={"actuator": package_data},
+    packages=["actuator"],
 )
