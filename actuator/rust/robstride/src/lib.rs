@@ -99,7 +99,7 @@ lazy_static! {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum CanComMode {
     AnnounceDevId = 0,
     MotorCtrl,
@@ -147,6 +147,7 @@ pub enum RunMode {
     CspPositionMode = 5,
 }
 
+#[derive(Debug, Clone)]
 pub struct ExId {
     pub id: u8,
     pub data: u16,
@@ -154,6 +155,7 @@ pub struct ExId {
     pub res: u8,
 }
 
+#[derive(Debug, Clone)]
 pub struct CanPack {
     pub ex_id: ExId,
     pub len: u8,
@@ -504,6 +506,49 @@ impl Motors {
         self.read_all_pending_responses()
     }
 
+    pub fn send_can_timeout(&mut self, timeout: u32) -> Result<(), std::io::Error> {
+        // Note: This doesn't work, need to debug with Robstride.
+
+        // let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        // let num_motors = motor_ids.len();
+
+        // for id in motor_ids {
+        //     let mut pack = CanPack {
+        //         ex_id: ExId {
+        //             id,
+        //             data: 0,
+        //             mode: CanComMode::ParaUpdate,
+        //             res: 0,
+        //         },
+        //         len: 8,
+        //         data: vec![0; 8],
+        //     };
+
+        //     let index: u16 = 0x200c;
+        //     pack.data[..2].copy_from_slice(&index.to_le_bytes());
+
+        //     let timeout = timeout.clamp(0, 100000);
+        //     println!("Setting CAN timeout to {}", timeout);
+        //     pack.data[4..8].copy_from_slice(&timeout.to_le_bytes());
+
+        //     self.send_command(&pack)?;
+        // }
+
+        // // Print the response.
+        // for _ in 0..num_motors {
+        //     match rx_unpack(&mut self.port) {
+        //         Ok(pack) => {
+        //             println!("Received pack: {:?}", pack);
+        //         }
+        //         Err(e) => {
+        //             println!("Failed to set CAN timeout: {}", e);
+        //         }
+        //     }
+        // }
+
+        Ok(())
+    }
+
     pub fn send_reset(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
         let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
 
@@ -580,15 +625,10 @@ impl Motors {
             let torque_int_set = float_to_uint(torque_set, config.t_min, config.t_max, 16);
 
             pack.ex_id.data = torque_int_set;
-
-            pack.data[0] = (pos_int_set >> 8) as u8;
-            pack.data[1] = (pos_int_set & 0xFF) as u8;
-            pack.data[2] = (vel_int_set >> 8) as u8;
-            pack.data[3] = (vel_int_set & 0xFF) as u8;
-            pack.data[4] = (kp_int_set >> 8) as u8;
-            pack.data[5] = (kp_int_set & 0xFF) as u8;
-            pack.data[6] = (kd_int_set >> 8) as u8;
-            pack.data[7] = (kd_int_set & 0xFF) as u8;
+            pack.data[0..2].copy_from_slice(&pos_int_set.to_le_bytes());
+            pack.data[2..4].copy_from_slice(&vel_int_set.to_le_bytes());
+            pack.data[4..6].copy_from_slice(&kp_int_set.to_le_bytes());
+            pack.data[6..8].copy_from_slice(&kd_int_set.to_le_bytes());
 
             self.send_command(&pack)
         } else {
@@ -687,6 +727,7 @@ pub struct MotorsSupervisor {
     latest_feedback: Arc<Mutex<HashMap<u8, MotorFeedback>>>,
     motors_to_zero: Arc<Mutex<HashSet<u8>>>,
     sleep_duration: Arc<Mutex<Duration>>,
+    paused: Arc<Mutex<bool>>,
 }
 
 impl MotorsSupervisor {
@@ -702,6 +743,7 @@ impl MotorsSupervisor {
         let target_positions = Arc::new(Mutex::new(HashMap::new()));
         let kp_kd_values = Arc::new(Mutex::new(kp_kd_values));
         let running = Arc::new(Mutex::new(true));
+        let paused = Arc::new(Mutex::new(false));
 
         let controller = MotorsSupervisor {
             motors,
@@ -710,7 +752,8 @@ impl MotorsSupervisor {
             running,
             latest_feedback: Arc::new(Mutex::new(HashMap::new())),
             motors_to_zero: Arc::new(Mutex::new(HashSet::new())),
-            sleep_duration: Arc::new(Mutex::new(Duration::from_micros(100))),
+            sleep_duration: Arc::new(Mutex::new(Duration::from_micros(10))),
+            paused,
         };
 
         controller.start_control_thread();
@@ -726,13 +769,21 @@ impl MotorsSupervisor {
         let latest_feedback = Arc::clone(&self.latest_feedback);
         let motors_to_zero = Arc::clone(&self.motors_to_zero);
         let sleep_duration = Arc::clone(&self.sleep_duration);
+        let paused = Arc::clone(&self.paused);
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
             let _ = motors.send_reset();
+            let _ =
+                motors.send_can_timeout((sleep_duration.lock().unwrap().as_micros() * 2) as u32);
             let _ = motors.send_start();
 
             while *running.lock().unwrap() {
+                if *paused.lock().unwrap() {
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+
                 {
                     let latest_feedback_from_motors = motors.get_latest_feedback();
                     let mut latest_feedback = latest_feedback.lock().unwrap();
@@ -816,6 +867,11 @@ impl MotorsSupervisor {
     pub fn get_latest_feedback(&self) -> HashMap<u8, MotorFeedback> {
         let latest_feedback = self.latest_feedback.lock().unwrap();
         latest_feedback.clone()
+    }
+
+    pub fn toggle_pause(&self) {
+        let mut paused = self.paused.lock().unwrap();
+        *paused = !*paused;
     }
 
     pub fn stop(&self) {
