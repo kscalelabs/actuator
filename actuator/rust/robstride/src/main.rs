@@ -1,4 +1,4 @@
-use robstride::{MotorInfo, MotorType, Motors};
+use robstride::{MotorType, Motors};
 use std::collections::HashMap;
 use std::error::Error;
 use std::f32::consts::PI;
@@ -70,10 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create motor instances
     let mut motors = Motors::new(
         "/dev/ttyUSB0",
-        vec![MotorInfo {
-            id: TEST_ID,
-            motor_type: MotorType::Type01,
-        }],
+        HashMap::from([(TEST_ID, MotorType::Type01)]),
     )?;
 
     let mut last_command: i32 = -1;
