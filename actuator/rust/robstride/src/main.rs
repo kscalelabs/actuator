@@ -11,7 +11,6 @@ const MAX_TORQUE: f32 = 1.0;
 
 fn run_motion_test(motors: &mut Motors) -> Result<(), Box<dyn Error>> {
     motors.send_reset()?;
-    // motors.send_set_zero()?;
     motors.send_start()?;
 
     let start_time = Instant::now();

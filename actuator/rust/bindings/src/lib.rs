@@ -51,9 +51,12 @@ impl PyRobstrideMotors {
             .collect()
     }
 
-    fn send_set_zero(&mut self) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
+    fn send_set_zero(
+        &mut self,
+        motor_ids: Option<Vec<u8>>,
+    ) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
         self.inner
-            .send_set_zero()
+            .send_set_zero(motor_ids.as_deref())
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
             .into_iter()
             .map(|(k, v)| Ok((k, v.into())))
