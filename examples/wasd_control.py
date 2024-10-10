@@ -12,14 +12,14 @@ def main(stdscr: curses.window) -> None:
     parser.add_argument("--port-name", type=str, default="/dev/ttyCH341USB0")
     parser.add_argument("--motor-id", type=int, default=1)
     parser.add_argument("--motor-type", type=str, default="04")
-    parser.add_argument("--second-motor-id", type=int, default=2)  # New argument for second motor ID
-    parser.add_argument("--second-motor-type", type=str, default="01")  # New argument for second motor type
+    parser.add_argument("--second-motor-id", type=int, default=2)
+    parser.add_argument("--second-motor-type", type=str, default="01")
     args = parser.parse_args()
 
-    motor_infos = {args.motor_id: args.motor_type, args.second_motor_id: args.second_motor_type}  # Use new arguments
+    motor_infos = {args.motor_id: args.motor_type, args.second_motor_id: args.second_motor_type}
     supervisor = RobstrideMotorsSupervisor(args.port_name, motor_infos)
     supervisor.add_motor_to_zero(args.motor_id)
-    supervisor.add_motor_to_zero(args.second_motor_id)  # Use new argument
+    supervisor.add_motor_to_zero(args.second_motor_id)
 
     position_motor_1 = 0.0  # Initial position for motor 1
     position_motor_2 = 0.0  # Initial position for motor 2
@@ -67,5 +67,5 @@ def main(stdscr: curses.window) -> None:
 
 
 if __name__ == "__main__":
-    # python -m examples.supervisor
+    # python -m examples.wasd_control
     curses.wrapper(main)
