@@ -75,6 +75,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port-name", type=str, default="/dev/ttyUSB0")
     parser.add_argument("--motor-id", type=int, default=1)
+    parser.add_argument("--motor-type", type=str, default="01")
     parser.add_argument("--max-torque", type=float, default=10.0)
     parser.add_argument("--amplitude", type=float, default=math.pi)
     parser.add_argument("--period", type=float, default=1.0)
@@ -85,7 +86,7 @@ def main() -> None:
 
     motors = RobstrideMotors(
         port_name=args.port_name,
-        motor_infos={args.motor_id: "01"},
+        motor_infos={args.motor_id: args.motor_type},
     )
 
     run_motion_test(
