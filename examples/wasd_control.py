@@ -1,12 +1,13 @@
 """Example of moving a motor using the supervisor with WASD control."""
 
 import argparse
-import time
 import curses
+import time
 
 from actuator import RobstrideMotorsSupervisor
 
-def main(stdscr) -> None:
+
+def main(stdscr: curses.window) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port-name", type=str, default="/dev/ttyCH341USB0")
     parser.add_argument("--motor-id", type=int, default=1)
@@ -15,10 +16,7 @@ def main(stdscr) -> None:
     parser.add_argument("--second-motor-type", type=str, default="01")  # New argument for second motor type
     args = parser.parse_args()
 
-    motor_infos = {
-        args.motor_id: args.motor_type,
-        args.second_motor_id: args.second_motor_type  # Use new arguments
-    }
+    motor_infos = {args.motor_id: args.motor_type, args.second_motor_id: args.second_motor_type}  # Use new arguments
     supervisor = RobstrideMotorsSupervisor(args.port_name, motor_infos)
     supervisor.add_motor_to_zero(args.motor_id)
     supervisor.add_motor_to_zero(args.second_motor_id)  # Use new argument
@@ -26,8 +24,8 @@ def main(stdscr) -> None:
     position_motor_1 = 0.0  # Initial position for motor 1
     position_motor_2 = 0.0  # Initial position for motor 2
     normal_step_size = 0.5  # Normal step size for position change
-    high_step_size = 1   # High step size for position change
-    low_step_size = 0.25  # Low step size for position change
+    # high_step_size = 1  # High step size for position change
+    # low_step_size = 0.25  # Low step size for position change
 
     stdscr.nodelay(True)  # Make getch non-blocking
     stdscr.clear()
@@ -39,13 +37,13 @@ def main(stdscr) -> None:
             # Check for key presses
             key = stdscr.getch()
 
-            if key == ord('a'):
+            if key == ord("a"):
                 position_motor_1 -= normal_step_size  # Move motor 1 counter-clockwise
-            elif key == ord('d'):
+            elif key == ord("d"):
                 position_motor_1 += normal_step_size  # Move motor 1 clockwise
-            elif key == ord('w'):
+            elif key == ord("w"):
                 position_motor_2 += normal_step_size  # Move motor 2 clockwise
-            elif key == ord('s'):
+            elif key == ord("s"):
                 position_motor_2 -= normal_step_size  # Move motor 2 counter-clockwise
 
             # Set target position for both motors
@@ -53,13 +51,20 @@ def main(stdscr) -> None:
             supervisor.set_target_position(args.second_motor_id, position_motor_2)
 
             feedback = supervisor.get_latest_feedback()
-            stdscr.addstr(0, 0, f"Motor 1 Position: {position_motor_1:.2f}, Motor 2 Position: {position_motor_2:.2f}, Feedback: {feedback}")
+            stdscr.addstr(
+                0,
+                0,
+                f"Motor 1 Position: {position_motor_1:.2f}, "
+                + f"Motor 2 Position: {position_motor_2:.2f}, "
+                + f"Feedback: {feedback}",
+            )
             stdscr.refresh()
 
     except KeyboardInterrupt:
         supervisor.stop()
         time.sleep(0.1)
         raise
+
 
 if __name__ == "__main__":
     # python -m examples.supervisor
