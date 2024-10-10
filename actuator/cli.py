@@ -1,9 +1,12 @@
 """Defines the CLI for the actuator project."""
 
+import logging
 import math
 import time
 
 from actuator.rust.py import PyRobstrideMotors
+
+logger = logging.getLogger(__name__)
 
 # Constants (you may need to adjust these based on your Python implementation)
 RUN_TIME = 3.0  # Assuming 10 seconds, adjust as needed
@@ -32,29 +35,40 @@ def run_motion_test(motors: PyRobstrideMotors) -> None:
         elapsed_time = time.time() - start_time
         desired_position = amplitude * math.cos(elapsed_time * PI * 2.0 / period + PI / 2.0)
 
-        feedback = motors.get_latest_feedback()[TEST_ID]
-        current_position = feedback.position
-        current_velocity = feedback.velocity
-        torque = max(
-            min(kp_04 * (desired_position - current_position) - kd_04 * current_velocity, MAX_TORQUE), -MAX_TORQUE
-        )
+        try:
+            feedback = motors.get_latest_feedback_for(TEST_ID)
+            current_position = feedback.position
+            current_velocity = feedback.velocity
+            torque = max(
+                min(kp_04 * (desired_position - current_position) - kd_04 * current_velocity, MAX_TORQUE), -MAX_TORQUE
+            )
 
-        motors.send_torque_controls({TEST_ID: torque})
+            motors.send_torque_controls({TEST_ID: torque})
+
+        except RuntimeError:
+            logger.exception("Runtime error while getting latest feedback")
+            motors.send_torque_controls({TEST_ID: 0.0})
 
         command_count += 1
-        print(
-            f"Motor {TEST_ID} Commands: {command_count}, Frequency: {command_count / elapsed_time:.2f} Hz, "
-            f"Desired position: {desired_position:.2f} Feedback: {feedback}"
+        logger.info(
+            "Motor %d Commands: %d, Frequency: %.2f Hz, Desired position: %.2f Feedback: %s",
+            TEST_ID,
+            command_count,
+            command_count / elapsed_time,
+            desired_position,
+            feedback,
         )
 
     motors.send_torque_controls({TEST_ID: 0.0})
     motors.send_reset()
 
     elapsed_time = time.time() - start_time
-    print(f"Done. Average control frequency: {command_count / elapsed_time:.2f} Hz")
+    logger.info(f"Done. Average control frequency: {command_count / elapsed_time:.2f} Hz")
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+
     motors = PyRobstrideMotors(
         port_name="/dev/ttyUSB0",
         motor_infos={TEST_ID: "01"},

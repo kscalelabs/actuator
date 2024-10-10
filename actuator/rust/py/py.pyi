@@ -10,6 +10,9 @@ class PyRobstrideMotorFeedback:
     torque: float
     mode: str
     faults: int
+    def __repr__(self) -> str:
+        ...
+
 
 class PyRobstrideMotors:
     def __new__(cls,port_name:str, motor_infos:typing.Mapping[int, str]): ...
@@ -32,6 +35,9 @@ class PyRobstrideMotors:
         ...
 
     def get_latest_feedback_for(self, motor_id:int) -> PyRobstrideMotorFeedback:
+        ...
+
+    def __repr__(self) -> str:
         ...
 
 

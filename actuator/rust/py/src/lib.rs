@@ -104,6 +104,11 @@ impl PyRobstrideMotors {
             .map(|feedback| feedback.clone().into())
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
+
+    fn __repr__(&self) -> PyResult<String> {
+        let motor_count = self.inner.get_latest_feedback().len();
+        Ok(format!("PyRobstrideMotors(motor_count={})", motor_count))
+    }
 }
 
 #[gen_stub_pyclass]
@@ -122,6 +127,17 @@ struct PyRobstrideMotorFeedback {
     mode: String,
     #[pyo3(get)]
     faults: u16,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyRobstrideMotorFeedback {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "PyRobstrideMotorFeedback(can_id={}, position={:.2}, velocity={:.2}, torque={:.2}, mode='{}', faults={})",
+            self.can_id, self.position, self.velocity, self.torque, self.mode, self.faults
+        ))
+    }
 }
 
 impl From<RobstrideMotorFeedback> for PyRobstrideMotorFeedback {
