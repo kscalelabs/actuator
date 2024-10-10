@@ -1,6 +1,8 @@
 use serialport::SerialPort;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 #[macro_use]
@@ -12,6 +14,8 @@ pub const CAN_ID_BROADCAST: u8 = 0xFE;
 pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
 
 pub const BAUDRATE: u32 = 921600;
+
+const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
 
 pub struct MotorConfig {
     pub p_min: f32,
@@ -31,6 +35,22 @@ lazy_static! {
         let mut m = HashMap::new();
         m.insert(
             MotorType::Type01,
+            MotorConfig {
+                p_min: -12.5,
+                p_max: 12.5,
+                v_min: -44.0,
+                v_max: 44.0,
+                kp_min: 0.0,
+                kp_max: 500.0,
+                kd_min: 0.0,
+                kd_max: 5.0,
+                t_min: -12.0,
+                t_max: 12.0,
+            },
+        );
+        // This is probably not correct, the Type02 is not released yet.
+        m.insert(
+            MotorType::Type02,
             MotorConfig {
                 p_min: -12.5,
                 p_max: 12.5,
@@ -274,8 +294,22 @@ fn rx_unpack_feedback(port: &mut Box<dyn SerialPort>) -> Result<MotorFeedbackRaw
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MotorType {
     Type01,
+    Type02,
     Type03,
     Type04,
+}
+
+pub fn motor_type_from_str(s: &str) -> Result<MotorType, std::io::Error> {
+    match s {
+        "01" => Ok(MotorType::Type01),
+        "02" => Ok(MotorType::Type02),
+        "03" => Ok(MotorType::Type03),
+        "04" => Ok(MotorType::Type04),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid motor type",
+        )),
+    }
 }
 
 pub struct Motors {
@@ -290,10 +324,11 @@ pub struct Motors {
 impl Motors {
     pub fn new(
         port_name: &str,
-        motor_infos: HashMap<u8, MotorType>,
+        motor_infos: &HashMap<u8, MotorType>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let port = init_serial_port(port_name)?;
         let motor_configs: HashMap<u8, &'static MotorConfig> = motor_infos
+            .clone()
             .into_iter()
             .filter_map(|(id, motor_type)| {
                 ROBSTRIDE_CONFIGS
@@ -413,7 +448,27 @@ impl Motors {
                     format!("Invalid motor ID: {}", id),
                 ));
             }
+        }
 
+        // Reset.
+        for &id in &ids_to_zero {
+            let pack = CanPack {
+                ex_id: ExId {
+                    id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::MotorReset,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+            };
+
+            self.send_command(&pack)?;
+        }
+        std::thread::sleep(self.sleep_time);
+
+        // Zero.
+        for &id in &ids_to_zero {
             let pack = CanPack {
                 ex_id: ExId {
                     id,
@@ -427,8 +482,23 @@ impl Motors {
 
             self.send_command(&pack)?;
         }
+        std::thread::sleep(self.sleep_time);
 
-        // After setting the zero for specified motors, sleep for a short time.
+        // Start.
+        for &id in &ids_to_zero {
+            let pack = CanPack {
+                ex_id: ExId {
+                    id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::MotorIn,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+            };
+
+            self.send_command(&pack)?;
+        }
         std::thread::sleep(self.sleep_time);
 
         self.read_all_pending_responses()
@@ -596,5 +666,169 @@ impl Motors {
         self.latest_feedback
             .get(&motor_id)
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "No feedback found"))
+    }
+}
+
+fn get_default_kp_kd_values(motor_infos: &HashMap<u8, MotorType>) -> HashMap<u8, (f32, f32)> {
+    let mut kp_kd_values = HashMap::new();
+
+    for (&motor_id, _) in motor_infos {
+        kp_kd_values.insert(motor_id, (10.0, 1.0));
+    }
+
+    kp_kd_values
+}
+
+pub struct MotorsSupervisor {
+    motors: Arc<Mutex<Motors>>,
+    target_positions: Arc<Mutex<HashMap<u8, f32>>>,
+    kp_kd_values: Arc<Mutex<HashMap<u8, (f32, f32)>>>,
+    running: Arc<Mutex<bool>>,
+    latest_feedback: Arc<Mutex<HashMap<u8, MotorFeedback>>>,
+    motors_to_zero: Arc<Mutex<HashSet<u8>>>,
+    sleep_duration: Arc<Mutex<Duration>>,
+}
+
+impl MotorsSupervisor {
+    pub fn new(
+        port_name: &str,
+        motor_infos: &HashMap<u8, MotorType>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Initialize Motors
+        let motors = Motors::new(port_name, motor_infos)?;
+        let kp_kd_values = get_default_kp_kd_values(&motor_infos);
+
+        let motors = Arc::new(Mutex::new(motors));
+        let target_positions = Arc::new(Mutex::new(HashMap::new()));
+        let kp_kd_values = Arc::new(Mutex::new(kp_kd_values));
+        let running = Arc::new(Mutex::new(true));
+
+        let controller = MotorsSupervisor {
+            motors,
+            target_positions,
+            kp_kd_values,
+            running,
+            latest_feedback: Arc::new(Mutex::new(HashMap::new())),
+            motors_to_zero: Arc::new(Mutex::new(HashSet::new())),
+            sleep_duration: Arc::new(Mutex::new(Duration::from_micros(100))),
+        };
+
+        controller.start_control_thread();
+
+        Ok(controller)
+    }
+
+    fn start_control_thread(&self) {
+        let motors = Arc::clone(&self.motors);
+        let target_positions = Arc::clone(&self.target_positions);
+        let kp_kd_values = Arc::clone(&self.kp_kd_values);
+        let running = Arc::clone(&self.running);
+        let latest_feedback = Arc::clone(&self.latest_feedback);
+        let motors_to_zero = Arc::clone(&self.motors_to_zero);
+        let sleep_duration = Arc::clone(&self.sleep_duration);
+
+        thread::spawn(move || {
+            let mut motors = motors.lock().unwrap();
+            let _ = motors.send_reset();
+            let _ = motors.send_start();
+
+            while *running.lock().unwrap() {
+                {
+                    let latest_feedback_from_motors = motors.get_latest_feedback();
+                    let mut latest_feedback = latest_feedback.lock().unwrap();
+                    *latest_feedback = latest_feedback_from_motors.clone();
+                }
+
+                {
+                    let mut motor_ids_to_zero = motors_to_zero.lock().unwrap();
+                    let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
+                    if !motor_ids.is_empty() {
+                        let _ = motors.send_set_zero(Some(&motor_ids));
+                        motor_ids_to_zero.clear();
+                    }
+                    let torque_commands = HashMap::from_iter(motor_ids.iter().map(|id| (*id, 0.0)));
+                    let _ = motors.send_torque_controls(&torque_commands);
+                }
+
+                {
+                    let target_positions = target_positions.lock().unwrap();
+                    let kp_kd_values = kp_kd_values.lock().unwrap();
+
+                    let mut torque_commands = HashMap::new();
+                    for (&motor_id, &target_position) in target_positions.iter() {
+                        if let Ok(feedback) = motors.get_latest_feedback_for(motor_id) {
+                            if feedback.position < -TWO_PI || feedback.position > TWO_PI {
+                                torque_commands.insert(motor_id, 0.0);
+                            } else if let Some(&(kp, kd)) = kp_kd_values.get(&motor_id) {
+                                let position_error = target_position - feedback.position;
+                                let velocity_error = 0.0 - feedback.velocity; // Assuming we want to stop at the target position
+
+                                let torque = kp * position_error + kd * velocity_error;
+                                torque_commands.insert(motor_id, torque);
+                            }
+                        }
+                    }
+
+                    // println!("Torque commands: {:?}", torque_commands);
+                    if !torque_commands.is_empty() {
+                        let _ = motors.send_torque_controls(&torque_commands);
+                    }
+                }
+
+                {
+                    std::thread::sleep(sleep_duration.lock().unwrap().clone());
+                }
+            }
+
+            let motor_ids: Vec<u8> = motors
+                .get_latest_feedback()
+                .keys()
+                .cloned()
+                .collect::<Vec<u8>>();
+
+            let zero_torque_sets: HashMap<u8, f32> =
+                HashMap::from_iter(motor_ids.iter().map(|id| (*id, 0.0)));
+            let _ = motors.send_torque_controls(&zero_torque_sets);
+            let _ = motors.send_reset();
+        });
+    }
+
+    pub fn set_target_position(&self, motor_id: u8, position: f32) {
+        let mut target_positions = self.target_positions.lock().unwrap();
+        target_positions.insert(motor_id, position);
+    }
+
+    pub fn set_kp_kd(&self, motor_id: u8, kp: f32, kd: f32) {
+        let mut kp_kd_values = self.kp_kd_values.lock().unwrap();
+        kp_kd_values.insert(motor_id, (kp, kd));
+    }
+
+    pub fn set_sleep_duration(&self, sleep_duration: Duration) {
+        let mut sleep_duration_to_set = self.sleep_duration.lock().unwrap();
+        *sleep_duration_to_set = sleep_duration;
+    }
+
+    pub fn add_motor_to_zero(&self, motor_id: u8) {
+        let mut motors_to_zero = self.motors_to_zero.lock().unwrap();
+        motors_to_zero.insert(motor_id);
+    }
+
+    pub fn get_latest_feedback(&self) -> HashMap<u8, MotorFeedback> {
+        let latest_feedback = self.latest_feedback.lock().unwrap();
+        latest_feedback.clone()
+    }
+
+    pub fn stop(&self) {
+        {
+            let mut running = self.running.lock().unwrap();
+            *running = false;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+impl Drop for MotorsSupervisor {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
