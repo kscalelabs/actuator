@@ -506,6 +506,50 @@ impl Motors {
         self.read_all_pending_responses()
     }
 
+    fn read_name(&mut self, motor_id: u8) -> Result<String, std::io::Error> {
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: motor_id,
+                data: CAN_ID_BROADCAST as u16,
+                mode: CanComMode::ParaRead,
+                res: 0,
+            },
+            len: 8,
+            data: vec![0; 8],
+        };
+
+        let index: u16 = 0x1001;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        tx_pack(&mut self.port, &pack)?;
+
+        match rx_unpack(&mut self.port) {
+            Ok(pack) => {
+                let name = pack
+                    .data
+                    .iter()
+                    .map(|&byte| byte as char)
+                    .collect::<String>();
+                Ok(name)
+            }
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to read motor name",
+            )),
+        }
+    }
+
+    pub fn read_names(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut names = HashMap::new();
+
+        for id in motor_ids {
+            let name = self.read_name(id)?;
+            names.insert(id, name);
+        }
+
+        Ok(names)
+    }
+
     pub fn send_can_timeout(&mut self, timeout: u32) -> Result<(), std::io::Error> {
         // Note: This doesn't work, need to debug with Robstride.
 
@@ -777,6 +821,9 @@ impl MotorsSupervisor {
             let _ =
                 motors.send_can_timeout((sleep_duration.lock().unwrap().as_micros() * 2) as u32);
             let _ = motors.send_start();
+
+            let names = motors.read_names();
+            println!("Names: {:?}", names);
 
             while *running.lock().unwrap() {
                 if *paused.lock().unwrap() {
