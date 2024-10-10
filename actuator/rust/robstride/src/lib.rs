@@ -672,8 +672,14 @@ impl Motors {
 fn get_default_kp_kd_values(motor_infos: &HashMap<u8, MotorType>) -> HashMap<u8, (f32, f32)> {
     let mut kp_kd_values = HashMap::new();
 
-    for (&motor_id, _) in motor_infos {
-        kp_kd_values.insert(motor_id, (10.0, 1.0));
+    for (&motor_id, &motor_type) in motor_infos {
+        if motor_type == MotorType::Type01 {
+            kp_kd_values.insert(motor_id, (0.25, 0.1));
+        } else if motor_type == MotorType::Type03 {
+            kp_kd_values.insert(motor_id, (5.0, 1.0));
+        } else if motor_type == MotorType::Type04 {
+            kp_kd_values.insert(motor_id, (10.0, 1.0));
+        }
     }
 
     kp_kd_values
