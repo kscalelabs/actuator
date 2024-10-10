@@ -14,6 +14,7 @@ PI = math.pi
 
 def run_motion_test(motors: PyRobstrideMotors) -> None:
     motors.send_reset()
+    motors.send_set_zero()
     motors.send_start()
 
     start_time = time.time()
@@ -31,7 +32,7 @@ def run_motion_test(motors: PyRobstrideMotors) -> None:
         elapsed_time = time.time() - start_time
         desired_position = amplitude * math.cos(elapsed_time * PI * 2.0 / period + PI / 2.0)
 
-        feedback = motors.get_latest_feedback_for(TEST_ID)
+        feedback = motors.get_latest_feedback()[TEST_ID]
         current_position = feedback.position
         current_velocity = feedback.velocity
         torque = max(
@@ -56,7 +57,7 @@ def run_motion_test(motors: PyRobstrideMotors) -> None:
 def main() -> None:
     motors = PyRobstrideMotors(
         port_name="/dev/ttyUSB0",
-        motor_infos=[(TEST_ID, "01")],
+        motor_infos={TEST_ID: "01"},
     )
     run_motion_test(motors)
 

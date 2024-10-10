@@ -2,8 +2,8 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use robstride::{
-    MotorFeedback as RobstrideMotorFeedback, MotorInfo as RobstrideMotorInfo,
-    MotorType as RobstrideMotorType, Motors as RobstrideMotors,
+    MotorFeedback as RobstrideMotorFeedback, MotorType as RobstrideMotorType,
+    Motors as RobstrideMotors,
 };
 use std::collections::HashMap;
 
@@ -17,7 +17,7 @@ struct PyRobstrideMotors {
 #[pymethods]
 impl PyRobstrideMotors {
     #[new]
-    fn new(port_name: String, motor_infos: Vec<(u8, String)>) -> PyResult<Self> {
+    fn new(port_name: String, motor_infos: HashMap<u8, String>) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
             .map(|(id, type_str)| {
@@ -26,14 +26,15 @@ impl PyRobstrideMotors {
                     "03" => RobstrideMotorType::Type03,
                     "04" => RobstrideMotorType::Type04,
                     _ => {
-                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                            "Invalid motor type",
-                        ))
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "Invalid motor type: {}",
+                            type_str
+                        )))
                     }
                 };
-                Ok(RobstrideMotorInfo { id, motor_type })
+                Ok((id, motor_type))
             })
-            .collect::<PyResult<Vec<RobstrideMotorInfo>>>()?;
+            .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
         let motors = RobstrideMotors::new(&port_name, motor_infos)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;

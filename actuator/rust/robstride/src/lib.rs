@@ -278,11 +278,6 @@ pub enum MotorType {
     Type04,
 }
 
-pub struct MotorInfo {
-    pub id: u8,
-    pub motor_type: MotorType,
-}
-
 pub struct Motors {
     port: Box<dyn SerialPort>,
     motor_configs: HashMap<u8, &'static MotorConfig>,
@@ -295,15 +290,15 @@ pub struct Motors {
 impl Motors {
     pub fn new(
         port_name: &str,
-        motor_infos: Vec<MotorInfo>,
+        motor_infos: HashMap<u8, MotorType>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let port = init_serial_port(port_name)?;
         let motor_configs: HashMap<u8, &'static MotorConfig> = motor_infos
             .into_iter()
-            .filter_map(|info| {
+            .filter_map(|(id, motor_type)| {
                 ROBSTRIDE_CONFIGS
-                    .get(&info.motor_type)
-                    .map(|config| (info.id, config))
+                    .get(&motor_type)
+                    .map(|config| (id, config))
             })
             .collect();
 
