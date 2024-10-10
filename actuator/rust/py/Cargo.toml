@@ -22,5 +22,5 @@ log = "0.4"
 env_logger = "0.11.5"
 serialport = "4.5.1"
 
-[[bin]]
-name = "stub_gen"
+# Other packages in the workspace.
+robstride = { path = "../robstride" }
