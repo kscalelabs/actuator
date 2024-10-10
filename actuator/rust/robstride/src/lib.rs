@@ -116,7 +116,7 @@ pub enum MotorMode {
     Brake,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum RunMode {
     UnsetMode = -1,
     MitMode = 0,
@@ -137,7 +137,7 @@ pub struct ExId {
 pub struct CanPack {
     pub ex_id: ExId,
     pub len: u8,
-    pub data: [u8; 8],
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -168,7 +168,6 @@ fn init_serial_port(device: &str) -> Result<Box<dyn SerialPort>, serialport::Err
         .stop_bits(serialport::StopBits::One)
         .timeout(Duration::from_millis(10))
         .open()?;
-    println!("Serial port initialized successfully");
     Ok(port)
 }
 
@@ -197,7 +196,7 @@ fn float_to_uint(x: f32, x_min: f32, x_max: f32, bits: u8) -> u16 {
     ((x - offset) * ((1 << bits) - 1) as f32 / span) as u16
 }
 
-fn txd_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io::Error> {
+fn tx_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io::Error> {
     let mut buffer = Vec::new();
     buffer.extend_from_slice(b"AT");
 
@@ -217,14 +216,12 @@ fn txd_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::i
     buffer.extend_from_slice(&pack.data[..pack.len as usize]);
     buffer.extend_from_slice(b"\r\n");
 
-    // println!("tx {:02X?}", buffer);
-
     port.write_all(&buffer)?;
     port.flush()?;
     Ok(())
 }
 
-fn read_bytes(port: &mut Box<dyn SerialPort>) -> Result<MotorFeedbackRaw, std::io::Error> {
+fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> {
     let mut buffer = [0u8; 17];
     let bytes_read = port.read(&mut buffer)?;
 
@@ -237,24 +234,40 @@ fn read_bytes(port: &mut Box<dyn SerialPort>) -> Result<MotorFeedbackRaw, std::i
             res: 0,
         };
 
-        let can_id = (ex_id.data & 0x00FF) as u8;
-        let faults = (ex_id.data & 0x3F00) >> 8;
-        let mode = unsafe { std::mem::transmute(((ex_id.data & 0xC000) >> 14) as u8) };
-
-        let pos_int = u16::from_be_bytes([buffer[7], buffer[8]]);
-        let vel_int = u16::from_be_bytes([buffer[9], buffer[10]]);
-        let torque_int = u16::from_be_bytes([buffer[11], buffer[12]]);
-
-        Ok(MotorFeedbackRaw {
-            can_id,
-            pos_int,
-            vel_int,
-            torque_int,
-            mode,
-            faults,
+        Ok(CanPack {
+            ex_id,
+            len: buffer[6],
+            data: buffer[7..16].to_vec(),
         })
     } else {
-        Ok(MotorFeedbackRaw::default())
+        Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "Failed to read CAN packet",
+        ))
+    }
+}
+
+fn rx_unpack_feedback(port: &mut Box<dyn SerialPort>) -> Result<MotorFeedbackRaw, std::io::Error> {
+    match rx_unpack(port) {
+        Ok(pack) => {
+            let can_id = (pack.ex_id.data & 0x00FF) as u8;
+            let faults = (pack.ex_id.data & 0x3F00) >> 8;
+            let mode = unsafe { std::mem::transmute(((pack.ex_id.data & 0xC000) >> 14) as u8) };
+
+            let pos_int = u16::from_be_bytes([pack.data[0], pack.data[1]]);
+            let vel_int = u16::from_be_bytes([pack.data[2], pack.data[3]]);
+            let torque_int = u16::from_be_bytes([pack.data[4], pack.data[5]]);
+
+            Ok(MotorFeedbackRaw {
+                can_id,
+                pos_int,
+                vel_int,
+                torque_int,
+                mode,
+                faults,
+            })
+        }
+        Err(_) => Ok(MotorFeedbackRaw::default()),
     }
 }
 
@@ -305,15 +318,59 @@ impl Motors {
     }
 
     fn send_command(&mut self, pack: &CanPack) -> Result<(), std::io::Error> {
-        txd_pack(&mut self.port, pack)?;
+        tx_pack(&mut self.port, pack)?;
         self.pending_responses += 1;
         Ok(())
+    }
+
+    pub fn send_get_mode(&mut self) -> Result<HashMap<u8, RunMode>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+
+        for id in motor_ids {
+            let mut pack = CanPack {
+                ex_id: ExId {
+                    id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::SdoRead,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+            };
+
+            let index: u16 = 0x7005;
+            pack.data[..2].copy_from_slice(&index.to_le_bytes());
+            tx_pack(&mut self.port, &pack)?;
+        }
+
+        match rx_unpack(&mut self.port) {
+            Ok(pack) => {
+                let mode = unsafe { std::mem::transmute(pack.data[4] as u8) };
+                Ok(HashMap::from([(pack.ex_id.id, mode)]))
+            }
+            Err(_) => Ok(HashMap::new()),
+        }
     }
 
     fn send_set_mode(
         &mut self,
         mode: RunMode,
     ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        if self.mode == RunMode::UnsetMode {
+            let read_mode = self.send_get_mode()?;
+            if read_mode.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to get the current mode",
+                ));
+            }
+
+            let single_read_mode = read_mode.values().next().unwrap().clone();
+            if read_mode.values().all(|&x| x == single_read_mode) {
+                self.mode = single_read_mode;
+            }
+        }
+
         if self.mode == mode {
             return Ok(HashMap::new());
         }
@@ -325,13 +382,13 @@ impl Motors {
         for id in motor_ids {
             let mut pack = CanPack {
                 ex_id: ExId {
-                    id: id,
+                    id,
                     data: CAN_ID_DEBUG_UI as u16,
                     mode: CanComMode::SdoWrite,
                     res: 0,
                 },
                 len: 8,
-                data: [0; 8],
+                data: vec![0; 8],
             };
 
             let index: u16 = 0x7005;
@@ -352,13 +409,13 @@ impl Motors {
         for id in motor_ids {
             let pack = CanPack {
                 ex_id: ExId {
-                    id: id,
+                    id,
                     data: CAN_ID_DEBUG_UI as u16,
                     mode: CanComMode::MotorZero,
                     res: 0,
                 },
                 len: 8,
-                data: [1, 0, 0, 0, 0, 0, 0, 0], // Set first byte to 1 as per documentation
+                data: vec![1, 0, 0, 0, 0, 0, 0, 0],
             };
 
             self.send_command(&pack)?;
@@ -376,13 +433,13 @@ impl Motors {
         for id in motor_ids {
             let pack = CanPack {
                 ex_id: ExId {
-                    id: id,
+                    id,
                     data: CAN_ID_DEBUG_UI as u16,
                     mode: CanComMode::MotorReset,
                     res: 0,
                 },
                 len: 8,
-                data: [0; 8],
+                data: vec![0; 8],
             };
 
             self.send_command(&pack)?;
@@ -399,13 +456,13 @@ impl Motors {
         for id in motor_ids {
             let pack = CanPack {
                 ex_id: ExId {
-                    id: id,
+                    id,
                     data: CAN_ID_DEBUG_UI as u16,
                     mode: CanComMode::MotorIn,
                     res: 0,
                 },
                 len: 8,
-                data: [0; 8],
+                data: vec![0; 8],
             };
 
             self.send_command(&pack)?;
@@ -418,7 +475,7 @@ impl Motors {
 
     fn send_motor_control(
         &mut self,
-        motor_id: u8,
+        id: u8,
         pos_set: f32,
         vel_set: f32,
         kp_set: f32,
@@ -427,16 +484,16 @@ impl Motors {
     ) -> Result<(), std::io::Error> {
         self.send_set_mode(RunMode::MitMode)?;
 
-        if let Some(config) = self.motor_configs.get(&motor_id) {
+        if let Some(config) = self.motor_configs.get(&id) {
             let mut pack = CanPack {
                 ex_id: ExId {
-                    id: motor_id as u8,
+                    id,
                     data: 0,
                     mode: CanComMode::MotorCtrl,
                     res: 0,
                 },
                 len: 8,
-                data: [0; 8],
+                data: vec![0; 8],
             };
 
             let pos_int_set = float_to_uint(pos_set, config.p_min, config.p_max, 16);
@@ -471,20 +528,29 @@ impl Motors {
 
     pub fn send_torque_controls(
         &mut self,
-        torque_set: f32,
-    ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
-        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
-
-        for id in motor_ids {
-            self.send_torque_control(id, torque_set)?;
+        torque_sets: &HashMap<u8, f32>,
+    ) -> Result<HashMap<u8, MotorFeedback>, Box<dyn std::error::Error>> {
+        // Check if all provided motor IDs are valid
+        for &motor_id in torque_sets.keys() {
+            if !self.motor_configs.contains_key(&motor_id) {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid motor ID: {}", motor_id),
+                )));
+            }
         }
 
-        self.read_all_pending_responses()
+        // Send torque commands for each motor
+        for (&motor_id, &torque_set) in torque_sets {
+            self.send_torque_control(motor_id, torque_set)?;
+        }
+
+        self.read_all_pending_responses().map_err(|e| e.into())
     }
 
     fn read_all_pending_responses(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
         while self.pending_responses > 0 {
-            match read_bytes(&mut self.port) {
+            match rx_unpack_feedback(&mut self.port) {
                 Ok(raw_feedback) => {
                     if let Some(config) = self.motor_configs.get(&raw_feedback.can_id) {
                         let position =
@@ -507,9 +573,8 @@ impl Motors {
                     }
                     self.pending_responses -= 1;
                 }
-                Err(e) => {
+                Err(_) => {
                     self.pending_responses -= 1;
-                    eprintln!("Error reading response: {:?}", e);
                 }
             }
         }
