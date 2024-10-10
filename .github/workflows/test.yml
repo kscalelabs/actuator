@@ -30,6 +30,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
       - name: Restore cache
         id: restore-cache
         uses: actions/cache/restore@v3
