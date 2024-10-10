@@ -1,1 +1,2 @@
+include Cargo.toml
 recursive-include actuator/ *.rs *.pyi *.so *.py *.txt Cargo.toml py.typed

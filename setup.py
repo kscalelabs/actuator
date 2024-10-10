@@ -25,7 +25,8 @@ with open("actuator/__init__.py", "r", encoding="utf-8") as fh:
 assert version_re is not None, "Could not find version in actuator/__init__.py"
 version: str = version_re.group(1)
 
-package_data = ["py.typed", "requirements.txt", "requirements-dev.txt"]
+package_data = [f"actuator/{name}" for name in ("py.typed", "requirements.txt", "requirements-dev.txt")]
+package_data.append("Cargo.toml")
 for ext in ("pyi", "rs", "toml", "so"):
     package_data.extend(glob.iglob(f"actuator/**/*.{ext}", recursive=True))
 
