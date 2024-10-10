@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Create motor instances
     let motor_1 = Motor::new(&ROBSTRIDE_CONFIGS["04"], TEST_ID_1);
-    let motor_2 = Motor::new(&ROBSTRIDE_CONFIGS["01"], TEST_ID_2);
+    let motor_2 = Motor::new(&ROBSTRIDE_CONFIGS["03"], TEST_ID_2);
 
     // Insert motors into a HashMap
     let mut motors_map = HashMap::new();
@@ -34,12 +34,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::thread::sleep(Duration::from_millis(50));
     motors.send_reset(TEST_ID_1)?;
     std::thread::sleep(Duration::from_millis(50));
-    // motors.send_set_zero(TEST_ID_1)?;
+    motors.send_set_zero(TEST_ID_1)?;
     std::thread::sleep(Duration::from_millis(50));
     motors.send_reset(TEST_ID_1)?;
-    std::thread::sleep(Duration::from_millis(50));
+    std::thread::sleep(Duration::from_millis(100));
     motors.send_set_mode(TEST_ID_1, RunMode::MitMode)?;
-    std::thread::sleep(Duration::from_millis(50));
+    std::thread::sleep(Duration::from_millis(100));
     motors.send_start(TEST_ID_1)?;
     std::thread::sleep(Duration::from_millis(50));
     motors.send_set_speed_limit(TEST_ID_1, 5.0)?;
@@ -51,9 +51,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     motors.send_set_zero(TEST_ID_2)?;
     std::thread::sleep(Duration::from_millis(50));
     motors.send_reset(TEST_ID_2)?;
-    std::thread::sleep(Duration::from_millis(50));
+    std::thread::sleep(Duration::from_millis(100));
     motors.send_set_mode(TEST_ID_2, RunMode::MitMode)?;
-    std::thread::sleep(Duration::from_millis(50));
+    std::thread::sleep(Duration::from_millis(100));
     motors.send_start(TEST_ID_2)?;
     std::thread::sleep(Duration::from_millis(50));
     motors.send_set_speed_limit(TEST_ID_2, 5.0)?;
@@ -96,6 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // Send torque commands to the motors
         motors.send_torque_control(TEST_ID_1, torque_1 as f32)?;
+        std::thread::sleep(Duration::from_millis(4)); // Sleep to prevent overwhelming the bus
         motors.send_torque_control(TEST_ID_2, torque_2 as f32)?;
         std::thread::sleep(Duration::from_millis(4)); // Sleep to prevent overwhelming the bus
 

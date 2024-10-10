@@ -6,11 +6,13 @@ use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use ctrlc;
 
 const SAFETY_TORQUE_LIMIT: f32 = 1.0;
-const NUM_MOTORS: u8 = 2;
+const NUM_MOTORS: u8 = 5;
 const INIT_RETRIES: u8 = 1;
+const TORQUE_LIMIT: f32 = 20.0;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Create an atomic flag to handle SIGINT
@@ -22,151 +24,96 @@ fn main() -> Result<(), Box<dyn Error>> {
         r.store(false, Ordering::SeqCst);
     })?;
 
-    // Create motor instances for the first Motors group
-    let mut motors_map_1 = HashMap::new();
+    // Create motor instances with specified configurations
+    let mut motors_map = HashMap::new();
+    let configs = ["04", "03", "03", "04", "01"];
     for id in 1..=NUM_MOTORS {
-        let motor: Motor;
-        if id == 2 {
-            motor = Motor::new(&ROBSTRIDE_CONFIGS["01"], id);
-        } else {
-            motor = Motor::new(&ROBSTRIDE_CONFIGS["04"], id);
-        }
-        motors_map_1.insert(id, motor);
+        let motor = Motor::new(&ROBSTRIDE_CONFIGS[configs[(id - 1) as usize]], id);
+        motors_map.insert(id, motor);
     }
 
-    // // Create motor instances for the second Motors group
-    // let mut motors_map_2 = HashMap::new();
-    // for id in 1..=5 {
-    //     let motor = Motor::new(&ROBSTRIDE_CONFIGS["01"], id);
-    //     motors_map_2.insert(id, motor);
-    // }
+    // Create a Motors instance with the port name
+    let mut motors = Motors::new("/dev/ttyCH341USB0", motors_map)?;
 
-    // Create Motors instances with the port names
-    let mut motors_1 = Motors::new("/dev/ttyCH341USB0", motors_map_1)?;
-    // let mut motors_2 = Motors::new("/dev/ttyCH341USB1", motors_map_2)?;
-
-    // Function to initialize motors
-    let initialize_motors = |motors: &mut Motors| -> Result<(), Box<dyn Error>> {
-        for id in 1..=NUM_MOTORS {
-            for _ in 0..INIT_RETRIES {
-                motors.send_reset(id)?;
-                std::thread::sleep(Duration::from_millis(50));
-            }
-
-            for _ in 0..INIT_RETRIES {
-                motors.send_set_zero(id)?;
-                std::thread::sleep(Duration::from_millis(50));
-            }
-
-            for _ in 0..INIT_RETRIES {
-                motors.send_reset(id)?;
-                std::thread::sleep(Duration::from_millis(50));
-            }
-
-            for _ in 0..INIT_RETRIES {
-                motors.send_set_mode(id, RunMode::MitMode)?;
-                std::thread::sleep(Duration::from_millis(50));
-            }
-
-            for _ in 0..INIT_RETRIES {
-                motors.send_start(id)?;
-                std::thread::sleep(Duration::from_millis(50));
-            }
-
-            for _ in 0..INIT_RETRIES {
-                motors.send_set_speed_limit(id, 10.0)?;
-                std::thread::sleep(Duration::from_millis(50));
-            }
-
-            // for _ in 0..3 {
-            //     motors.send_set_location(id, 0.0)?;
-            //     std::thread::sleep(Duration::from_millis(50));
-            // }
-
+    // Initialize each motor
+    for id in 1..=NUM_MOTORS {
+        std::thread::sleep(Duration::from_millis(50));
+        motors.send_reset(id)?;
+        std::thread::sleep(Duration::from_millis(50));
+        if id != 5 {    
+            motors.send_set_zero(id)?;
+            std::thread::sleep(Duration::from_millis(50));
         }
-        motors.read_all_pending_responses()?;
-        Ok(())
-    };
+        motors.send_reset(id)?;
+        std::thread::sleep(Duration::from_millis(100));
+        motors.send_set_mode(id, RunMode::MitMode)?;
+        std::thread::sleep(Duration::from_millis(100));
+        motors.send_start(id)?;
+        std::thread::sleep(Duration::from_millis(50));
+        motors.send_set_speed_limit(id, 5.0)?;
+        std::thread::sleep(Duration::from_millis(50));
+    }
 
-    let pd_control = |motors: &mut Motors, target_position: f32, kp_map: &HashMap<u8, f32>, kd_map: &HashMap<u8, f32>| -> Result<(), Box<dyn Error>> {
-        for id in 1..=NUM_MOTORS {
-            if let Some(feedback) = motors.get_latest_feedback(id) {
-                let position_error = target_position - feedback.position;
-                let velocity_error = -feedback.velocity;
+    motors.read_all_pending_responses()?;
 
-                let kp = kp_map.get(&id).unwrap_or(&0.0);
-                let kd = kd_map.get(&id).unwrap_or(&0.0);
+    let start_time = Instant::now();
+    let mut command_count = 0;
 
-                let torque_set = kp * position_error + kd * velocity_error;
+    // PD controller parameters
+    let kp_map = HashMap::from([
+        (1, 45.0),
+        (2, 40.0),
+        (3, 40.0),
+        (4, 45.0),
+        (5, 20.0),
+    ]);
+    let kd_map = HashMap::from([
+        (1, 2.0),
+        (2, 0.3),
+        (3, 0.3),
+        (4, 2.0),
+        (5, 0.3),
+    ]);
 
-                let torque_set = torque_set.clamp(-SAFETY_TORQUE_LIMIT, SAFETY_TORQUE_LIMIT);
-
-                print!("Motor {} position: {} torque set: {}", id, feedback.position, torque_set);
-                motors.send_torque_control(id, torque_set)?;
-                std::thread::sleep(Duration::from_millis(50));
-            }
-        }
-        println!();
-        motors.read_all_pending_responses()?;
-        Ok(())
-    };
-
-    // Initialize both groups of motors
     std::thread::sleep(Duration::from_millis(100));
-    initialize_motors(&mut motors_1)?;
-    // std::thread::sleep(Duration::from_millis(100));
-    // initialize_motors(&mut motors_2)?;
 
-    println!("Motors initialized and set to stand position.");
+    loop {
+        if !running.load(Ordering::SeqCst) {
+            break;
+        }
 
-    // Define PD constants for each motor
-    let kp_map_1 = HashMap::from([
-        (1, 5.0),
-        (2, 5.0),
-        (3, 5.0),
-        (4, 5.0),
-        (5, 5.0),
-    ]);
-    let kd_map_1 = HashMap::from([
-        (1, 0.5),
-        (2, 0.5),
-        (3, 0.5),
-        (4, 0.5),
-        (5, 0.5),
-    ]);
-    let kp_map_2 = HashMap::from([
-        (1, 1.0),
-        (2, 1.0),
-        (3, 1.0),
-        (4, 1.0),
-        (5, 1.0),
-    ]);
-    let kd_map_2 = HashMap::from([
-        (1, 0.1),
-        (2, 0.1),
-        (3, 0.1),
-        (4, 0.1),
-        (5, 0.1),
-    ]);
+        for id in 1..=NUM_MOTORS {
+            let desired_position = 0.0;
 
-    // Wait until interrupted
-    while running.load(Ordering::SeqCst) {
-        std::thread::sleep(Duration::from_millis(50));
-        pd_control(&mut motors_1, 0.0, &kp_map_1, &kd_map_1)?;
-        std::thread::sleep(Duration::from_millis(50));
-        motors_1.read_all_pending_responses()?;
-        // for id in 1..=NUM_MOTORS {
-        //     print!("Motor {} position: {}\t", id, motors_1.get_latest_feedback(id).unwrap().position);
-        // }
-        // println!();
-        // pd_control(&mut motors_2, 0.0, &kp_map_2, &kd_map_2)?;
+            let current_position = motors.get_latest_feedback(id).map_or(0.0, |f| f.position) as f32;
+            let current_velocity = motors.get_latest_feedback(id).map_or(0.0, |f| f.velocity) as f32;
+
+            let kp = kp_map.get(&id).unwrap_or(&0.0);
+            let kd = kd_map.get(&id).unwrap_or(&0.0);
+
+            let torque = kp * (desired_position - current_position) - kd * current_velocity;
+            let torque = torque.clamp(-TORQUE_LIMIT, TORQUE_LIMIT);
+
+            motors.send_torque_control(id, torque)?;
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        command_count += 1;
+        motors.read_all_pending_responses()?;
+
+        let elapsed_time = start_time.elapsed().as_secs_f32();
+        let commands_per_second = command_count as f32 / elapsed_time;
+        println!("Commands per second: {:.2}", commands_per_second);
     }
+
+    let elapsed_time = start_time.elapsed().as_secs_f32();
+    println!("Done");
+    println!("Average control frequency: {:.2} Hz", (command_count as f32 / elapsed_time));
 
     // Reset motors on exit
     for id in 1..=NUM_MOTORS {
-        motors_1.send_reset(id)?;
-        // motors_2.send_reset(id)?;
-        std::thread::sleep(Duration::from_millis(10));
+        motors.send_reset(id)?;
+        std::thread::sleep(Duration::from_millis(50));
     }
 
     println!("Motors reset. Exiting.");

@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     // Create motor instances
-    let motor = Motor::new(&ROBSTRIDE_CONFIGS["01"], TEST_ID);
+    let motor = Motor::new(&ROBSTRIDE_CONFIGS["03"], TEST_ID);
 
     // Insert motors into a HashMap
     let mut motors_map = HashMap::new();
@@ -48,12 +48,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut command_count = 0; // Initialize a counter for commands
 
     // PD controller parameters
-    let kp_04 = 4.0;
+    let kp_04 = 20.0;
     let kd_04 = 0.1;
 
     // Define period and amplitude
     let period = 5.0;
-    let amplitude = PI;
+    let amplitude = PI/8.0;
 
     while running.load(Ordering::SeqCst) && start_time.elapsed() < Duration::new(20, 0) {
         let elapsed_time = start_time.elapsed().as_secs_f32();
