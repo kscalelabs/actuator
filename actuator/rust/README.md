@@ -18,8 +18,8 @@ On Linux, you may need to install libudev-dev for Rust to properly build.
 sudo apt-get install libudev-dev
 ```
 
-To run the profiling script:
 
+To run the profiling script:
 ```bash
 cargo run --bin profile
 ```
@@ -30,10 +30,4 @@ To run the stand script:
 
 ```bash
 cargo run --bin stand
-```
-
-Also set the baud rate to 921600 with
-
-```bash
-sudo stty -F /dev/ttyCH341USB0 921600
 ```
