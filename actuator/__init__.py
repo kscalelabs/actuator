@@ -1,3 +1,3 @@
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
-from .rust.py import PyRobstrideMotorFeedback as RobstrideMotorFeedback, PyRobstrideMotors as RobstrideMotors
+from .rust.bindings import PyRobstrideMotorFeedback as RobstrideMotorFeedback, PyRobstrideMotors as RobstrideMotors

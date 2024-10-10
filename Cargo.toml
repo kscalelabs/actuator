@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "actuator/rust/py",
+    "actuator/rust/bindings",
     "actuator/rust/robstride",
 ]
 resolver = "2"

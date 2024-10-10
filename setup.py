@@ -25,7 +25,8 @@ with open("actuator/__init__.py", "r", encoding="utf-8") as fh:
 assert version_re is not None, "Could not find version in actuator/__init__.py"
 version: str = version_re.group(1)
 
-package_data = ["py.typed", "requirements.txt", "requirements-dev.txt"]
+package_data = [f"actuator/{name}" for name in ("py.typed", "requirements.txt", "requirements-dev.txt")]
+package_data.append("Cargo.toml")
 for ext in ("pyi", "rs", "toml", "so"):
     package_data.extend(glob.iglob(f"actuator/**/*.{ext}", recursive=True))
 
@@ -38,8 +39,8 @@ setup(
     url="https://github.com/kscalelabs/actuator",
     rust_extensions=[
         RustExtension(
-            target="actuator.rust.py",
-            path="actuator/rust/py/Cargo.toml",
+            target="actuator.rust.bindings",
+            path="actuator/rust/bindings/Cargo.toml",
             binding=Binding.PyO3,
         ),
     ],
@@ -49,8 +50,8 @@ setup(
     long_description_content_type="text/markdown",
     python_requires=">=3.11",
     install_requires=requirements,
-    tests_require=requirements_dev,
     extras_require={"dev": requirements_dev},
     include_package_data=True,
     package_data={"actuator": package_data},
+    packages=["actuator"],
 )
