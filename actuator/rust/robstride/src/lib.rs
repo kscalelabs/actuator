@@ -275,6 +275,8 @@ pub struct Motors {
     motor_configs: HashMap<u8, &'static MotorConfig>,
     latest_feedback: HashMap<u8, MotorFeedback>,
     pending_responses: usize,
+    mode: RunMode,
+    sleep_time: Duration,
 }
 
 impl Motors {
@@ -297,6 +299,8 @@ impl Motors {
             motor_configs,
             latest_feedback: HashMap::new(),
             pending_responses: 0,
+            mode: RunMode::UnsetMode,
+            sleep_time: Duration::from_millis(50),
         })
     }
 
@@ -306,106 +310,110 @@ impl Motors {
         Ok(())
     }
 
-    pub fn send_set_mode(&mut self, motor_id: u8, mode: RunMode) -> Result<(), std::io::Error> {
-        let mut pack = CanPack {
-            ex_id: ExId {
-                id: motor_id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::SdoWrite,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
+    fn send_set_mode(
+        &mut self,
+        mode: RunMode,
+    ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        if self.mode == mode {
+            return Ok(HashMap::new());
+        }
 
-        let index: u16 = 0x7005;
-        pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        pack.data[4] = mode as u8;
+        self.mode = mode;
 
-        self.send_command(&pack)
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+
+        for id in motor_ids {
+            let mut pack = CanPack {
+                ex_id: ExId {
+                    id: id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::SdoWrite,
+                    res: 0,
+                },
+                len: 8,
+                data: [0; 8],
+            };
+
+            let index: u16 = 0x7005;
+            pack.data[..2].copy_from_slice(&index.to_le_bytes());
+            pack.data[4] = mode as u8;
+            self.send_command(&pack)?;
+        }
+
+        // After setting the mode for all motors, sleep for a short time.
+        std::thread::sleep(self.sleep_time);
+
+        self.read_all_pending_responses()
     }
 
-    pub fn send_reset(&mut self, motor_id: u8) -> Result<(), std::io::Error> {
-        let pack = CanPack {
-            ex_id: ExId {
-                id: motor_id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::MotorReset,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
+    pub fn send_set_zero(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
 
-        self.send_command(&pack)
+        for id in motor_ids {
+            let pack = CanPack {
+                ex_id: ExId {
+                    id: id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::MotorZero,
+                    res: 0,
+                },
+                len: 8,
+                data: [1, 0, 0, 0, 0, 0, 0, 0], // Set first byte to 1 as per documentation
+            };
+
+            self.send_command(&pack)?;
+        }
+
+        // After setting the mode for all motors, sleep for a short time.
+        std::thread::sleep(self.sleep_time);
+
+        self.read_all_pending_responses()
     }
 
-    pub fn send_start(&mut self, motor_id: u8) -> Result<(), std::io::Error> {
-        let pack = CanPack {
-            ex_id: ExId {
-                id: motor_id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::MotorIn,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
+    pub fn send_reset(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
 
-        self.send_command(&pack)
+        for id in motor_ids {
+            let pack = CanPack {
+                ex_id: ExId {
+                    id: id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::MotorReset,
+                    res: 0,
+                },
+                len: 8,
+                data: [0; 8],
+            };
+
+            self.send_command(&pack)?;
+        }
+
+        // After sending the reset command, sleep for a short time.
+        std::thread::sleep(self.sleep_time);
+        self.read_all_pending_responses()
     }
 
-    pub fn send_set_zero(&mut self, motor_id: u8) -> Result<(), std::io::Error> {
-        let pack = CanPack {
-            ex_id: ExId {
-                id: motor_id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::MotorZero,
-                res: 0,
-            },
-            len: 8,
-            data: [1, 0, 0, 0, 0, 0, 0, 0], // Set first byte to 1 as per documentation
-        };
+    pub fn send_start(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
 
-        self.send_command(&pack)
-    }
+        for id in motor_ids {
+            let pack = CanPack {
+                ex_id: ExId {
+                    id: id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::MotorIn,
+                    res: 0,
+                },
+                len: 8,
+                data: [0; 8],
+            };
 
-    pub fn send_set_speed_limit(&mut self, motor_id: u8, speed: f32) -> Result<(), std::io::Error> {
-        let mut pack = CanPack {
-            ex_id: ExId {
-                id: motor_id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::SdoWrite,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
+            self.send_command(&pack)?;
+        }
 
-        let index: u16 = 0x7017;
-        pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        pack.data[4..8].copy_from_slice(&speed.to_le_bytes());
-
-        self.send_command(&pack)
-    }
-
-    pub fn send_set_location(&mut self, motor_id: u8, location: f32) -> Result<(), std::io::Error> {
-        let mut pack = CanPack {
-            ex_id: ExId {
-                id: motor_id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::SdoWrite,
-                res: 0,
-            },
-            len: 8,
-            data: [0; 8],
-        };
-
-        let index: u16 = 0x7016;
-        pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        pack.data[4..8].copy_from_slice(&location.to_le_bytes());
-
-        self.send_command(&pack)
+        // After sending the start command, sleep for a short time.
+        std::thread::sleep(self.sleep_time);
+        self.read_all_pending_responses()
     }
 
     fn send_motor_control(
@@ -417,6 +425,8 @@ impl Motors {
         kd_set: f32,
         torque_set: f32,
     ) -> Result<(), std::io::Error> {
+        self.send_set_mode(RunMode::MitMode)?;
+
         if let Some(config) = self.motor_configs.get(&motor_id) {
             let mut pack = CanPack {
                 ex_id: ExId {
@@ -455,27 +465,24 @@ impl Motors {
         }
     }
 
-    pub fn send_position_control(
-        &mut self,
-        motor_id: u8,
-        pos_set: f32,
-        kp_set: f32,
-        kd_set: f32,
-    ) -> Result<(), std::io::Error> {
-        self.send_motor_control(motor_id, pos_set, 0.0, kp_set, kd_set, 0.0)
-    }
-
-    pub fn send_torque_control(
-        &mut self,
-        motor_id: u8,
-        torque_set: f32,
-    ) -> Result<(), std::io::Error> {
+    fn send_torque_control(&mut self, motor_id: u8, torque_set: f32) -> Result<(), std::io::Error> {
         self.send_motor_control(motor_id, 0.0, 0.0, 0.0, 0.0, torque_set)
     }
 
-    pub fn read_all_pending_responses(
+    pub fn send_torque_controls(
         &mut self,
+        torque_set: f32,
     ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+
+        for id in motor_ids {
+            self.send_torque_control(id, torque_set)?;
+        }
+
+        self.read_all_pending_responses()
+    }
+
+    fn read_all_pending_responses(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
         while self.pending_responses > 0 {
             match read_bytes(&mut self.port) {
                 Ok(raw_feedback) => {
@@ -509,7 +516,13 @@ impl Motors {
         Ok(self.latest_feedback.clone())
     }
 
-    pub fn get_latest_feedback(&self, motor_id: u8) -> Option<&MotorFeedback> {
-        self.latest_feedback.get(&motor_id)
+    pub fn get_latest_feedback(&self) -> HashMap<u8, MotorFeedback> {
+        self.latest_feedback.clone()
+    }
+
+    pub fn get_latest_feedback_for(&self, motor_id: u8) -> Result<&MotorFeedback, std::io::Error> {
+        self.latest_feedback
+            .get(&motor_id)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "No feedback found"))
     }
 }
