@@ -398,10 +398,22 @@ impl Motors {
         self.read_all_pending_responses()
     }
 
-    pub fn send_set_zero(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
-        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+    pub fn send_set_zero(
+        &mut self,
+        motor_ids: Option<&[u8]>,
+    ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let ids_to_zero = motor_ids
+            .map(|ids| ids.to_vec())
+            .unwrap_or_else(|| self.motor_configs.keys().cloned().collect());
 
-        for id in motor_ids {
+        for &id in &ids_to_zero {
+            if !self.motor_configs.contains_key(&id) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid motor ID: {}", id),
+                ));
+            }
+
             let pack = CanPack {
                 ex_id: ExId {
                     id,
@@ -416,7 +428,7 @@ impl Motors {
             self.send_command(&pack)?;
         }
 
-        // After setting the mode for all motors, sleep for a short time.
+        // After setting the zero for specified motors, sleep for a short time.
         std::thread::sleep(self.sleep_time);
 
         self.read_all_pending_responses()

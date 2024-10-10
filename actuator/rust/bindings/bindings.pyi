@@ -19,7 +19,7 @@ class PyRobstrideMotors:
     def send_get_mode(self) -> dict[int, str]:
         ...
 
-    def send_set_zero(self) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_set_zero(self, motor_ids:typing.Optional[typing.Sequence[int]]) -> dict[int, PyRobstrideMotorFeedback]:
         ...
 
     def send_reset(self) -> dict[int, PyRobstrideMotorFeedback]:
