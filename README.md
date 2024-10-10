@@ -40,20 +40,23 @@ Note that there are some additional steps needed before the Robstride USB contro
 
 1. Install [this driver](https://github.com/WCHSoftGroup/ch341ser_linux) for the CH341 USB controller.
 2. This should create a `/dev/ttyUSB0` or `/dev/ttyCH341USB0` device - you should check which one by doing `ls /dev/tty*`.
-3. Run the following command to configure the baud rate of the controller:
-
+You might need to the change the permissions:
+```bash
+sudo chmod 666 /dev/ttyCH341USB0
+```
+4. Run the following command to configure the baud rate of the controller:
 ```bash
 sudo stty -F /dev/ttyUSB0 921600
 ```
 
 4. Alternatively, you can add the following line to your `/etc/udev/rules.d/51-ch340.rules` file to automatically configure the baud rate:
-
 ```bash
 KERNEL=="ttyCH341USB[0-9]", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="ttyUSB%n", RUN+="/bin/stty -F /dev/ttyCH341USB0 921600"
 KERNEL=="ttyUSB[0-9]", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", RUN+="/bin/stty -F /dev/ttyUSB0 921600"
 ```
 
 5. After adding the above rule, you should run `sudo udevadm control --reload-rules` to reload the rules.
+
 
 ## Supported Actuators
 
