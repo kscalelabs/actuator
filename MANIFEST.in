@@ -1,1 +1,1 @@
-recursive-include actuator/ *.rs *.pyi *.so *.py *.txt Cargo.toml Cargo.lock py.typed MANIFEST.in
+recursive-include actuator/ *.rs *.pyi *.so *.py *.txt Cargo.toml py.typed
