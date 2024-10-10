@@ -2,6 +2,7 @@
 #!/usr/bin/env python
 """Setup script for the project."""
 
+import glob
 import re
 
 from setuptools import setup
@@ -39,7 +40,6 @@ setup(
         ),
     ],
     setup_requires=["setuptools-rust"],
-    include_package_data=True,
     zip_safe=False,
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -47,4 +47,9 @@ setup(
     install_requires=requirements,
     tests_require=requirements_dev,
     extras_require={"dev": requirements_dev},
+    include_package_data=True,
+    package_data={
+        "actuator": ["py.typed", "requirements.txt", "requirements-dev.txt"]
+        + [i for ext in ("pyi", "rs", "toml", "so") for i in glob.glob(f"actuator/rust/**/*.{ext}")],
+    },
 )
