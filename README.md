@@ -41,10 +41,13 @@ Note that there are some additional steps needed before the Robstride USB contro
 1. Install [this driver](https://github.com/WCHSoftGroup/ch341ser_linux) for the CH341 USB controller.
 2. This should create a `/dev/ttyUSB0` or `/dev/ttyCH341USB0` device - you should check which one by doing `ls /dev/tty*`.
 You might need to the change the permissions:
+
 ```bash
 sudo chmod 666 /dev/ttyCH341USB0
 ```
-4. Run the following command to configure the baud rate of the controller:
+
+3. Run the following command to configure the baud rate of the controller:
+
 ```bash
 sudo stty -F /dev/ttyUSB0 921600
 ```
