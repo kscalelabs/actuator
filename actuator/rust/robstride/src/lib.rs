@@ -112,7 +112,7 @@ lazy_static! {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum CanComMode {
     AnnounceDevId = 0,
     MotorCtrl,
@@ -206,6 +206,18 @@ fn init_serial_port(device: &str) -> Result<Box<dyn SerialPort>, serialport::Err
     Ok(port)
 }
 
+fn uint_to_float(x_int: u16, x_min: f32, x_max: f32, bits: u8) -> f32 {
+    let span = x_max - x_min;
+    let offset = x_min;
+    (x_int as f32) * span / ((1 << bits) - 1) as f32 + offset
+}
+
+fn float_to_uint(x: f32, x_min: f32, x_max: f32, bits: u8) -> u16 {
+    let span = x_max - x_min;
+    let offset = x_min;
+    ((x - offset) * ((1 << bits) - 1) as f32 / span) as u16
+}
+
 fn pack_bits(values: &[u32], bit_lengths: &[u8]) -> u32 {
     let mut result: u32 = 0;
     let mut current_shift = 0;
@@ -233,34 +245,36 @@ fn unpack_bits(value: u32, bit_lengths: &[u8]) -> Vec<u32> {
     result
 }
 
-fn uint_to_float(x_int: u16, x_min: f32, x_max: f32, bits: u8) -> f32 {
-    let span = x_max - x_min;
-    let offset = x_min;
-    (x_int as f32) * span / ((1 << bits) - 1) as f32 + offset
+fn pack_ex_id(ex_id: &ExId) -> [u8; 4] {
+    let addr = (pack_bits(
+        &[
+            ex_id.res as u32,
+            ex_id.mode as u32,
+            ex_id.data as u32,
+            ex_id.id as u32,
+        ],
+        &[3, 5, 16, 8],
+    ) << 3)
+        | 0x00000004;
+    addr.to_be_bytes()
 }
 
-fn float_to_uint(x: f32, x_min: f32, x_max: f32, bits: u8) -> u16 {
-    let span = x_max - x_min;
-    let offset = x_min;
-    ((x - offset) * ((1 << bits) - 1) as f32 / span) as u16
+fn unpack_ex_id(addr: [u8; 4]) -> ExId {
+    let addr = u32::from_be_bytes(addr);
+    let addr = unpack_bits(addr >> 3, &[3, 5, 16, 8]);
+    ExId {
+        res: addr[0] as u8,
+        mode: unsafe { std::mem::transmute(addr[1] as u8) },
+        data: addr[2] as u16,
+        id: addr[3] as u8,
+    }
 }
 
 fn tx_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io::Error> {
     let mut buffer = Vec::new();
     buffer.extend_from_slice(b"AT");
 
-    let addr = (pack_bits(
-        &[
-            pack.ex_id.res as u32,
-            pack.ex_id.mode as u32,
-            pack.ex_id.data as u32,
-            pack.ex_id.id as u32,
-        ],
-        &[3, 5, 16, 8],
-    ) << 3)
-        | 0x00000004;
-
-    buffer.extend_from_slice(&addr.to_be_bytes());
+    buffer.extend_from_slice(&pack_ex_id(&pack.ex_id));
     buffer.push(pack.len);
     buffer.extend_from_slice(&pack.data[..pack.len as usize]);
     buffer.extend_from_slice(b"\r\n");
@@ -293,15 +307,7 @@ fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> 
     // );
 
     if buffer[0] == b'A' && buffer[1] == b'T' {
-        let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]);
-        let addr = unpack_bits(addr >> 3, &[3, 5, 16, 8]);
-        let ex_id: ExId = ExId {
-            res: 0,
-            mode: unsafe { std::mem::transmute(addr[1] as u8) },
-            data: addr[2] as u16,
-            id: addr[3] as u8,
-        };
-
+        let ex_id = unpack_ex_id([buffer[2], buffer[3], buffer[4], buffer[5]]);
         let len = buffer[6];
         let mut buffer = vec![0u8; len as usize + 2];
         port.read_exact(&mut buffer)?;
@@ -953,6 +959,8 @@ impl MotorsSupervisor {
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
+
+            // Clear the buffer at the start.
             let _ = motors.send_reset();
             let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
             let _ = motors.send_start();
