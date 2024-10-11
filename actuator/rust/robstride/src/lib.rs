@@ -15,8 +15,6 @@ pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
 
 pub const BAUDRATE: u32 = 921600;
 
-const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
-
 pub struct MotorConfig {
     pub p_min: f32,
     pub p_max: f32,
@@ -28,6 +26,7 @@ pub struct MotorConfig {
     pub kd_max: f32,
     pub t_min: f32,
     pub t_max: f32,
+    pub zero_on_init: bool,
 }
 
 lazy_static! {
@@ -46,6 +45,7 @@ lazy_static! {
                 kd_max: 5.0,
                 t_min: -12.0,
                 t_max: 12.0,
+                zero_on_init: true, // Single encoder motor.
             },
         );
         // This is probably not correct, the Type02 is not released yet.
@@ -62,6 +62,7 @@ lazy_static! {
                 kd_max: 5.0,
                 t_min: -12.0,
                 t_max: 12.0,
+                zero_on_init: false,
             },
         );
         m.insert(
@@ -77,6 +78,7 @@ lazy_static! {
                 kd_max: 100.0,
                 t_min: -60.0,
                 t_max: 60.0,
+                zero_on_init: false,
             },
         );
         m.insert(
@@ -92,6 +94,7 @@ lazy_static! {
                 kd_max: 100.0,
                 t_min: -120.0,
                 t_max: 120.0,
+                zero_on_init: false,
             },
         );
         m
@@ -750,10 +753,10 @@ impl Motors {
             let torque_int_set = float_to_uint(torque_set, config.t_min, config.t_max, 16);
 
             pack.ex_id.data = torque_int_set;
-            pack.data[0..2].copy_from_slice(&pos_int_set.to_le_bytes());
-            pack.data[2..4].copy_from_slice(&vel_int_set.to_le_bytes());
-            pack.data[4..6].copy_from_slice(&kp_int_set.to_le_bytes());
-            pack.data[6..8].copy_from_slice(&kd_int_set.to_le_bytes());
+            pack.data[0..2].copy_from_slice(&pos_int_set.to_be_bytes());
+            pack.data[2..4].copy_from_slice(&vel_int_set.to_be_bytes());
+            pack.data[4..6].copy_from_slice(&kp_int_set.to_be_bytes());
+            pack.data[6..8].copy_from_slice(&kd_int_set.to_be_bytes());
 
             self.send_command(&pack)
         } else {
@@ -762,6 +765,38 @@ impl Motors {
                 "Motor not found",
             ))
         }
+    }
+
+    fn send_pd_control(
+        &mut self,
+        motor_id: u8,
+        pos_set: f32,
+        vel_set: f32,
+        kp_set: f32,
+        kd_set: f32,
+    ) -> Result<(), std::io::Error> {
+        self.send_motor_control(motor_id, pos_set, vel_set, kp_set, kd_set, 0.0)
+    }
+
+    pub fn send_pd_controls(
+        &mut self,
+        pd_sets: &HashMap<u8, (f32, f32, f32, f32)>,
+    ) -> Result<HashMap<u8, MotorFeedback>, Box<dyn std::error::Error>> {
+        // Check if all provided motor IDs are valid
+        for &motor_id in pd_sets.keys() {
+            if !self.motor_configs.contains_key(&motor_id) {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid motor ID: {}", motor_id),
+                )));
+            }
+        }
+
+        // Send PD commands for each motor
+        for (&motor_id, &(pos_set, vel_set, kp, kd)) in pd_sets {
+            self.send_pd_control(motor_id, pos_set, vel_set, kp, kd)?;
+        }
+        self.read_all_pending_responses().map_err(|e| e.into())
     }
 
     fn send_torque_control(&mut self, motor_id: u8, torque_set: f32) -> Result<(), std::io::Error> {
@@ -786,7 +821,6 @@ impl Motors {
         for (&motor_id, &torque_set) in torque_sets {
             self.send_torque_control(motor_id, torque_set)?;
         }
-
         self.read_all_pending_responses().map_err(|e| e.into())
     }
 
@@ -864,7 +898,16 @@ impl MotorsSupervisor {
         let motors = Motors::new(port_name, motor_infos)?;
         let kp_kd_values = get_default_kp_kd_values(&motor_infos);
 
+        // Find motors that need to be zeroed on initialization.
+        let zero_on_init_motors = motors
+            .motor_configs
+            .iter()
+            .filter(|(_, &config)| config.zero_on_init)
+            .map(|(&id, _)| id)
+            .collect::<HashSet<u8>>();
+
         let motors = Arc::new(Mutex::new(motors));
+        let motors_to_zero = Arc::new(Mutex::new(zero_on_init_motors));
         let target_positions = Arc::new(Mutex::new(HashMap::new()));
         let kp_kd_values = Arc::new(Mutex::new(kp_kd_values));
         let running = Arc::new(Mutex::new(true));
@@ -876,7 +919,7 @@ impl MotorsSupervisor {
             kp_kd_values,
             running,
             latest_feedback: Arc::new(Mutex::new(HashMap::new())),
-            motors_to_zero: Arc::new(Mutex::new(HashSet::new())),
+            motors_to_zero,
             sleep_duration: Arc::new(Mutex::new(Duration::from_micros(10))),
             paused,
         };
@@ -903,18 +946,20 @@ impl MotorsSupervisor {
             let _ = motors.send_start();
 
             while *running.lock().unwrap() {
+                // If paused, just wait 100ms without sending any commands.
                 if *paused.lock().unwrap() {
-                    // If paused, just wait 100ms without sending any commands.
                     std::thread::sleep(Duration::from_millis(100));
                     continue;
                 }
 
+                // Read latest feedback from motors.
                 {
                     let latest_feedback_from_motors = motors.get_latest_feedback();
                     let mut latest_feedback = latest_feedback.lock().unwrap();
                     *latest_feedback = latest_feedback_from_motors.clone();
                 }
 
+                // Send zero torque commands to motors that need to be zeroed.
                 {
                     let mut motor_ids_to_zero = motors_to_zero.lock().unwrap();
                     let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
@@ -926,7 +971,14 @@ impl MotorsSupervisor {
                     let _ = motors.send_torque_controls(&torque_commands);
                 }
 
+                // Send PD commands to motors.
                 {
+                    /*
+                    This code is equivalent, where we run closed-loop torque
+                    control, but on the host device rather than on the motor.
+
+                    const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
+
                     let target_positions = target_positions.lock().unwrap();
                     let kp_kd_values = kp_kd_values.lock().unwrap();
 
@@ -948,6 +1000,17 @@ impl MotorsSupervisor {
                     // println!("Torque commands: {:?}", torque_commands);
                     if !torque_commands.is_empty() {
                         let _ = motors.send_torque_controls(&torque_commands);
+                    }
+                    */
+
+                    let target_positions = target_positions.lock().unwrap();
+                    let kp_kd_values = kp_kd_values.lock().unwrap();
+
+                    let pd_sets = HashMap::from_iter(target_positions.iter().map(|(id, pos)| {
+                        (*id, (*pos, 0.0, kp_kd_values[id].0, kp_kd_values[id].1))
+                    }));
+                    if !pd_sets.is_empty() {
+                        let _ = motors.send_pd_controls(&pd_sets);
                     }
                 }
 

@@ -43,12 +43,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  pause / p");
     println!("  quit / q");
 
-    // Automatically zero the motor if it is a 01.
-    if motor_type == MotorType::Type01 {
-        println!("Automatically zeroing motor {}", test_id);
-        controller.add_motor_to_zero(test_id);
-    }
-
     loop {
         print!("> ");
         io::stdout().flush()?;
