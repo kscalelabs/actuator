@@ -22,8 +22,10 @@ pub struct MotorConfig {
     pub v_max: f32,
     pub kp_min: f32,
     pub kp_max: f32,
+    pub kp_default: f32,
     pub kd_min: f32,
     pub kd_max: f32,
+    pub kd_default: f32,
     pub t_min: f32,
     pub t_max: f32,
     pub zero_on_init: bool,
@@ -41,8 +43,10 @@ lazy_static! {
                 v_max: 44.0,
                 kp_min: 0.0,
                 kp_max: 500.0,
+                kp_default: 20.0,
                 kd_min: 0.0,
                 kd_max: 5.0,
+                kd_default: 1.0,
                 t_min: -12.0,
                 t_max: 12.0,
                 zero_on_init: true, // Single encoder motor.
@@ -58,8 +62,10 @@ lazy_static! {
                 v_max: 44.0,
                 kp_min: 0.0,
                 kp_max: 500.0,
+                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 5.0,
+                kd_default: 1.0,
                 t_min: -12.0,
                 t_max: 12.0,
                 zero_on_init: false,
@@ -74,8 +80,10 @@ lazy_static! {
                 v_max: 20.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
+                kp_default: 1000.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
+                kd_default: 10.0,
                 t_min: -60.0,
                 t_max: 60.0,
                 zero_on_init: false,
@@ -90,8 +98,10 @@ lazy_static! {
                 v_max: 15.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
+                kp_default: 1000.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
+                kd_default: 10.0,
                 t_min: -120.0,
                 t_max: 120.0,
                 zero_on_init: false,
@@ -868,16 +878,6 @@ impl Motors {
     }
 }
 
-fn get_default_kp_kd_values(motor_infos: &HashMap<u8, MotorType>) -> HashMap<u8, (f32, f32)> {
-    let mut kp_kd_values = HashMap::new();
-
-    for (&motor_id, _) in motor_infos {
-        kp_kd_values.insert(motor_id, (10.0, 1.0));
-    }
-
-    kp_kd_values
-}
-
 pub struct MotorsSupervisor {
     motors: Arc<Mutex<Motors>>,
     target_positions: Arc<Mutex<HashMap<u8, f32>>>,
@@ -896,7 +896,13 @@ impl MotorsSupervisor {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos)?;
-        let kp_kd_values = get_default_kp_kd_values(&motor_infos);
+
+        // Get default KP/KD values for all motors.
+        let kp_kd_values = motors
+            .motor_configs
+            .iter()
+            .map(|(id, config)| (*id, (config.kp_default, config.kd_default)))
+            .collect::<HashMap<u8, (f32, f32)>>();
 
         // Find motors that need to be zeroed on initialization.
         let zero_on_init_motors = motors
