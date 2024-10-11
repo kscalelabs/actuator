@@ -899,12 +899,12 @@ impl MotorsSupervisor {
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
             let _ = motors.send_reset();
-            let _ =
-                motors.send_can_timeout((sleep_duration.lock().unwrap().as_micros() * 2) as u32);
+            let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
             let _ = motors.send_start();
 
             while *running.lock().unwrap() {
                 if *paused.lock().unwrap() {
+                    // If paused, just wait 100ms without sending any commands.
                     std::thread::sleep(Duration::from_millis(100));
                     continue;
                 }
