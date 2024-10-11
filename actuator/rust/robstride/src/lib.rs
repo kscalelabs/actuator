@@ -80,7 +80,7 @@ lazy_static! {
                 v_max: 20.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
-                kp_default: 1000.0,
+                kp_default: 100.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
                 kd_default: 10.0,
@@ -98,7 +98,7 @@ lazy_static! {
                 v_max: 15.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
-                kp_default: 1000.0,
+                kp_default: 300.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
                 kd_default: 10.0,
@@ -219,6 +219,20 @@ fn pack_bits(values: &[u32], bit_lengths: &[u8]) -> u32 {
     result
 }
 
+fn unpack_bits(value: u32, bit_lengths: &[u8]) -> Vec<u32> {
+    let mut result = Vec::new();
+    let mut current_value = value;
+
+    for &bits in bit_lengths.iter().rev() {
+        let mask = (1 << bits) - 1;
+        result.push(current_value & mask);
+        current_value >>= bits;
+    }
+
+    result.reverse();
+    result
+}
+
 fn uint_to_float(x_int: u16, x_min: f32, x_max: f32, bits: u8) -> f32 {
     let span = x_max - x_min;
     let offset = x_min;
@@ -279,13 +293,15 @@ fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> 
     // );
 
     if buffer[0] == b'A' && buffer[1] == b'T' {
-        let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]) >> 3;
-        let ex_id = ExId {
-            id: (addr & 0xFF) as u8,
-            data: ((addr >> 8) & 0xFFFF) as u16,
-            mode: unsafe { std::mem::transmute((addr >> 24) as u8) },
+        let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]);
+        let addr = unpack_bits(addr >> 3, &[3, 5, 16, 8]);
+        let ex_id: ExId = ExId {
             res: 0,
+            mode: unsafe { std::mem::transmute(addr[1] as u8) },
+            data: addr[2] as u16,
+            id: addr[3] as u8,
         };
+
         let len = buffer[6];
         let mut buffer = vec![0u8; len as usize + 2];
         port.read_exact(&mut buffer)?;
@@ -305,8 +321,6 @@ fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> 
             data: buffer,
         })
     } else {
-        println!("Failed to read CAN packet");
-
         Err(std::io::Error::new(
             std::io::ErrorKind::UnexpectedEof,
             "Failed to read CAN packet",
@@ -607,7 +621,7 @@ impl Motors {
         Ok(name)
     }
 
-    fn read_uint_param(&mut self, motor_id: u8, index: u16) -> Result<u32, std::io::Error> {
+    fn read_uint16_param(&mut self, motor_id: u8, index: u16) -> Result<u16, std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: motor_id,
@@ -624,7 +638,7 @@ impl Motors {
         tx_pack(&mut self.port, &pack)?;
 
         let pack = rx_unpack(&mut self.port)?;
-        let value = u32::from_le_bytes(pack.data[4..8].try_into().unwrap());
+        let value = u16::from_le_bytes(pack.data[4..6].try_into().unwrap());
         Ok(value)
     }
 
@@ -662,13 +676,13 @@ impl Motors {
         Ok(names)
     }
 
-    pub fn read_can_timeout(&mut self) -> Result<HashMap<u8, u32>, std::io::Error> {
+    pub fn read_can_timeouts(&mut self) -> Result<HashMap<u8, f32>, std::io::Error> {
         let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
         let mut timeouts = HashMap::new();
 
         for id in motor_ids {
-            let timeout = self.read_uint_param(id, 0x200c)?;
-            timeouts.insert(id, timeout);
+            let timeout = self.read_uint16_param(id, 0x200c)?;
+            timeouts.insert(id, timeout as f32 / 20.0);
         }
         Ok(timeouts)
     }
@@ -867,6 +881,7 @@ pub struct MotorsSupervisor {
     motors_to_zero: Arc<Mutex<HashSet<u8>>>,
     sleep_duration: Arc<Mutex<Duration>>,
     paused: Arc<Mutex<bool>>,
+    restart: Arc<Mutex<bool>>,
 }
 
 impl MotorsSupervisor {
@@ -908,6 +923,7 @@ impl MotorsSupervisor {
         let target_params = Arc::new(Mutex::new(target_params));
         let running = Arc::new(Mutex::new(true));
         let paused = Arc::new(Mutex::new(false));
+        let restart = Arc::new(Mutex::new(false));
 
         let controller = MotorsSupervisor {
             motors,
@@ -917,6 +933,7 @@ impl MotorsSupervisor {
             motors_to_zero,
             sleep_duration: Arc::new(Mutex::new(Duration::from_micros(10))),
             paused,
+            restart,
         };
 
         controller.start_control_thread();
@@ -932,6 +949,7 @@ impl MotorsSupervisor {
         let motors_to_zero = Arc::clone(&self.motors_to_zero);
         let sleep_duration = Arc::clone(&self.sleep_duration);
         let paused = Arc::clone(&self.paused);
+        let restart = Arc::clone(&self.restart);
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
@@ -944,6 +962,12 @@ impl MotorsSupervisor {
                 if *paused.lock().unwrap() {
                     std::thread::sleep(Duration::from_millis(100));
                     continue;
+                }
+
+                if *restart.lock().unwrap() {
+                    *restart.lock().unwrap() = false;
+                    let _ = motors.send_reset();
+                    let _ = motors.send_start();
                 }
 
                 // Read latest feedback from motors.
@@ -1054,6 +1078,11 @@ impl MotorsSupervisor {
     pub fn toggle_pause(&self) {
         let mut paused = self.paused.lock().unwrap();
         *paused = !*paused;
+    }
+
+    pub fn reset(&self) {
+        let mut restart = self.restart.lock().unwrap();
+        *restart = true;
     }
 
     pub fn stop(&self) {
