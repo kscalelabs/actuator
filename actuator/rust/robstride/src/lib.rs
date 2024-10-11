@@ -359,6 +359,27 @@ pub fn motor_type_from_str(s: &str) -> Result<MotorType, std::io::Error> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct MotorControlParams {
+    pub position: f32,
+    pub velocity: f32,
+    pub kp: f32,
+    pub kd: f32,
+    pub torque: f32,
+}
+
+impl Default for MotorControlParams {
+    fn default() -> Self {
+        MotorControlParams {
+            position: 0.0,
+            velocity: 0.0,
+            kp: 0.0,
+            kd: 0.0,
+            torque: 0.0,
+        }
+    }
+}
+
 pub struct Motors {
     port: Box<dyn SerialPort>,
     motor_configs: HashMap<u8, &'static MotorConfig>,
@@ -736,11 +757,7 @@ impl Motors {
     fn send_motor_control(
         &mut self,
         id: u8,
-        pos_set: f32,
-        vel_set: f32,
-        kp_set: f32,
-        kd_set: f32,
-        torque_set: f32,
+        params: &MotorControlParams,
     ) -> Result<(), std::io::Error> {
         self.send_set_mode(RunMode::MitMode)?;
 
@@ -756,11 +773,11 @@ impl Motors {
                 data: vec![0; 8],
             };
 
-            let pos_int_set = float_to_uint(pos_set, config.p_min, config.p_max, 16);
-            let vel_int_set = float_to_uint(vel_set, config.v_min, config.v_max, 16);
-            let kp_int_set = float_to_uint(kp_set, config.kp_min, config.kp_max, 16);
-            let kd_int_set = float_to_uint(kd_set, config.kd_min, config.kd_max, 16);
-            let torque_int_set = float_to_uint(torque_set, config.t_min, config.t_max, 16);
+            let pos_int_set = float_to_uint(params.position, config.p_min, config.p_max, 16);
+            let vel_int_set = float_to_uint(params.velocity, config.v_min, config.v_max, 16);
+            let kp_int_set = float_to_uint(params.kp, config.kp_min, config.kp_max, 16);
+            let kd_int_set = float_to_uint(params.kd, config.kd_min, config.kd_max, 16);
+            let torque_int_set = float_to_uint(params.torque, config.t_min, config.t_max, 16);
 
             pack.ex_id.data = torque_int_set;
             pack.data[0..2].copy_from_slice(&pos_int_set.to_be_bytes());
@@ -777,23 +794,12 @@ impl Motors {
         }
     }
 
-    fn send_pd_control(
+    pub fn send_motor_controls(
         &mut self,
-        motor_id: u8,
-        pos_set: f32,
-        vel_set: f32,
-        kp_set: f32,
-        kd_set: f32,
-    ) -> Result<(), std::io::Error> {
-        self.send_motor_control(motor_id, pos_set, vel_set, kp_set, kd_set, 0.0)
-    }
-
-    pub fn send_pd_controls(
-        &mut self,
-        pd_sets: &HashMap<u8, (f32, f32, f32, f32)>,
+        params_map: &HashMap<u8, MotorControlParams>,
     ) -> Result<HashMap<u8, MotorFeedback>, Box<dyn std::error::Error>> {
         // Check if all provided motor IDs are valid
-        for &motor_id in pd_sets.keys() {
+        for &motor_id in params_map.keys() {
             if !self.motor_configs.contains_key(&motor_id) {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -803,33 +809,8 @@ impl Motors {
         }
 
         // Send PD commands for each motor
-        for (&motor_id, &(pos_set, vel_set, kp, kd)) in pd_sets {
-            self.send_pd_control(motor_id, pos_set, vel_set, kp, kd)?;
-        }
-        self.read_all_pending_responses().map_err(|e| e.into())
-    }
-
-    fn send_torque_control(&mut self, motor_id: u8, torque_set: f32) -> Result<(), std::io::Error> {
-        self.send_motor_control(motor_id, 0.0, 0.0, 0.0, 0.0, torque_set)
-    }
-
-    pub fn send_torque_controls(
-        &mut self,
-        torque_sets: &HashMap<u8, f32>,
-    ) -> Result<HashMap<u8, MotorFeedback>, Box<dyn std::error::Error>> {
-        // Check if all provided motor IDs are valid
-        for &motor_id in torque_sets.keys() {
-            if !self.motor_configs.contains_key(&motor_id) {
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("Invalid motor ID: {}", motor_id),
-                )));
-            }
-        }
-
-        // Send torque commands for each motor
-        for (&motor_id, &torque_set) in torque_sets {
-            self.send_torque_control(motor_id, torque_set)?;
+        for (&motor_id, params) in params_map {
+            self.send_motor_control(motor_id, params)?;
         }
         self.read_all_pending_responses().map_err(|e| e.into())
     }
@@ -880,8 +861,7 @@ impl Motors {
 
 pub struct MotorsSupervisor {
     motors: Arc<Mutex<Motors>>,
-    target_positions: Arc<Mutex<HashMap<u8, f32>>>,
-    kp_kd_values: Arc<Mutex<HashMap<u8, (f32, f32)>>>,
+    target_params: Arc<Mutex<HashMap<u8, MotorControlParams>>>,
     running: Arc<Mutex<bool>>,
     latest_feedback: Arc<Mutex<HashMap<u8, MotorFeedback>>>,
     motors_to_zero: Arc<Mutex<HashSet<u8>>>,
@@ -898,11 +878,22 @@ impl MotorsSupervisor {
         let motors = Motors::new(port_name, motor_infos)?;
 
         // Get default KP/KD values for all motors.
-        let kp_kd_values = motors
+        let target_params = motors
             .motor_configs
             .iter()
-            .map(|(id, config)| (*id, (config.kp_default, config.kd_default)))
-            .collect::<HashMap<u8, (f32, f32)>>();
+            .map(|(id, config)| {
+                (
+                    *id,
+                    MotorControlParams {
+                        position: 0.0,
+                        velocity: 0.0,
+                        kp: config.kp_default,
+                        kd: config.kd_default,
+                        torque: 0.0,
+                    },
+                )
+            })
+            .collect::<HashMap<u8, MotorControlParams>>();
 
         // Find motors that need to be zeroed on initialization.
         let zero_on_init_motors = motors
@@ -914,15 +905,13 @@ impl MotorsSupervisor {
 
         let motors = Arc::new(Mutex::new(motors));
         let motors_to_zero = Arc::new(Mutex::new(zero_on_init_motors));
-        let target_positions = Arc::new(Mutex::new(HashMap::new()));
-        let kp_kd_values = Arc::new(Mutex::new(kp_kd_values));
+        let target_params = Arc::new(Mutex::new(target_params));
         let running = Arc::new(Mutex::new(true));
         let paused = Arc::new(Mutex::new(false));
 
         let controller = MotorsSupervisor {
             motors,
-            target_positions,
-            kp_kd_values,
+            target_params,
             running,
             latest_feedback: Arc::new(Mutex::new(HashMap::new())),
             motors_to_zero,
@@ -937,8 +926,7 @@ impl MotorsSupervisor {
 
     fn start_control_thread(&self) {
         let motors = Arc::clone(&self.motors);
-        let target_positions = Arc::clone(&self.target_positions);
-        let kp_kd_values = Arc::clone(&self.kp_kd_values);
+        let target_params = Arc::clone(&self.target_params);
         let running = Arc::clone(&self.running);
         let latest_feedback = Arc::clone(&self.latest_feedback);
         let motors_to_zero = Arc::clone(&self.motors_to_zero);
@@ -973,51 +961,18 @@ impl MotorsSupervisor {
                         let _ = motors.send_set_zero(Some(&motor_ids));
                         motor_ids_to_zero.clear();
                     }
-                    let torque_commands = HashMap::from_iter(motor_ids.iter().map(|id| (*id, 0.0)));
-                    let _ = motors.send_torque_controls(&torque_commands);
+                    let torque_commands = HashMap::from_iter(
+                        motor_ids
+                            .iter()
+                            .map(|id| (*id, MotorControlParams::default())),
+                    );
+                    let _ = motors.send_motor_controls(&torque_commands);
                 }
 
                 // Send PD commands to motors.
                 {
-                    /*
-                    This code is equivalent, where we run closed-loop torque
-                    control, but on the host device rather than on the motor.
-
-                    const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
-
-                    let target_positions = target_positions.lock().unwrap();
-                    let kp_kd_values = kp_kd_values.lock().unwrap();
-
-                    let mut torque_commands = HashMap::new();
-                    for (&motor_id, &target_position) in target_positions.iter() {
-                        if let Ok(feedback) = motors.get_latest_feedback_for(motor_id) {
-                            if feedback.position < -TWO_PI || feedback.position > TWO_PI {
-                                torque_commands.insert(motor_id, 0.0);
-                            } else if let Some(&(kp, kd)) = kp_kd_values.get(&motor_id) {
-                                let position_error = target_position - feedback.position;
-                                let velocity_error = 0.0 - feedback.velocity; // Assuming we want to stop at the target position
-
-                                let torque = kp * position_error + kd * velocity_error;
-                                torque_commands.insert(motor_id, torque);
-                            }
-                        }
-                    }
-
-                    // println!("Torque commands: {:?}", torque_commands);
-                    if !torque_commands.is_empty() {
-                        let _ = motors.send_torque_controls(&torque_commands);
-                    }
-                    */
-
-                    let target_positions = target_positions.lock().unwrap();
-                    let kp_kd_values = kp_kd_values.lock().unwrap();
-
-                    let pd_sets = HashMap::from_iter(target_positions.iter().map(|(id, pos)| {
-                        (*id, (*pos, 0.0, kp_kd_values[id].0, kp_kd_values[id].1))
-                    }));
-                    if !pd_sets.is_empty() {
-                        let _ = motors.send_pd_controls(&pd_sets);
-                    }
+                    let target_params = target_params.lock().unwrap();
+                    let _ = motors.send_motor_controls(&target_params);
                 }
 
                 {
@@ -1031,21 +986,54 @@ impl MotorsSupervisor {
                 .cloned()
                 .collect::<Vec<u8>>();
 
-            let zero_torque_sets: HashMap<u8, f32> =
-                HashMap::from_iter(motor_ids.iter().map(|id| (*id, 0.0)));
-            let _ = motors.send_torque_controls(&zero_torque_sets);
+            let zero_torque_sets: HashMap<u8, MotorControlParams> = HashMap::from_iter(
+                motor_ids
+                    .iter()
+                    .map(|id| (*id, MotorControlParams::default())),
+            );
+            let _ = motors.send_motor_controls(&zero_torque_sets);
             let _ = motors.send_reset();
         });
     }
 
-    pub fn set_target_position(&self, motor_id: u8, position: f32) {
-        let mut target_positions = self.target_positions.lock().unwrap();
-        target_positions.insert(motor_id, position);
+    pub fn set_params(&self, motor_id: u8, params: MotorControlParams) {
+        let mut target_params = self.target_params.lock().unwrap();
+        target_params.insert(motor_id, params);
     }
 
-    pub fn set_kp_kd(&self, motor_id: u8, kp: f32, kd: f32) {
-        let mut kp_kd_values = self.kp_kd_values.lock().unwrap();
-        kp_kd_values.insert(motor_id, (kp, kd));
+    pub fn set_position(&self, motor_id: u8, position: f32) {
+        let mut target_params = self.target_params.lock().unwrap();
+        if let Some(params) = target_params.get_mut(&motor_id) {
+            params.position = position;
+        }
+    }
+
+    pub fn set_velocity(&self, motor_id: u8, velocity: f32) {
+        let mut target_params = self.target_params.lock().unwrap();
+        if let Some(params) = target_params.get_mut(&motor_id) {
+            params.velocity = velocity;
+        }
+    }
+
+    pub fn set_kp(&self, motor_id: u8, kp: f32) {
+        let mut target_params = self.target_params.lock().unwrap();
+        if let Some(params) = target_params.get_mut(&motor_id) {
+            params.kp = kp;
+        }
+    }
+
+    pub fn set_kd(&self, motor_id: u8, kd: f32) {
+        let mut target_params = self.target_params.lock().unwrap();
+        if let Some(params) = target_params.get_mut(&motor_id) {
+            params.kd = kd;
+        }
+    }
+
+    pub fn set_torque(&self, motor_id: u8, torque: f32) {
+        let mut target_params = self.target_params.lock().unwrap();
+        if let Some(params) = target_params.get_mut(&motor_id) {
+            params.torque = torque;
+        }
     }
 
     pub fn set_sleep_duration(&self, sleep_duration: Duration) {

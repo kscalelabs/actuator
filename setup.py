@@ -34,7 +34,7 @@ for ext in ("pyi", "rs", "toml", "so"):
 setup(
     name="actuator",
     version=version,
-    description="The actuator project",
+    description="Python interface for controlling various robotic actuators",
     author="Benjamin Bolte",
     url="https://github.com/kscalelabs/actuator",
     rust_extensions=[

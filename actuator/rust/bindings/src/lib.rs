@@ -2,7 +2,8 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use robstride::{
-    motor_type_from_str as robstride_motor_type_from_str, MotorFeedback as RobstrideMotorFeedback,
+    motor_type_from_str as robstride_motor_type_from_str,
+    MotorControlParams as RobstrideMotorControlParams, MotorFeedback as RobstrideMotorFeedback,
     MotorType as RobstrideMotorType, Motors as RobstrideMotors,
     MotorsSupervisor as RobstrideMotorsSupervisor,
 };
@@ -72,12 +73,17 @@ impl PyRobstrideMotors {
             .collect()
     }
 
-    fn send_torque_controls(
+    fn send_motor_controls(
         &mut self,
-        torque_sets: HashMap<u8, f32>,
+        motor_controls: HashMap<u8, PyRobstrideMotorControlParams>,
     ) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
+        let motor_controls: HashMap<u8, RobstrideMotorControlParams> = motor_controls
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect();
+
         self.inner
-            .send_torque_controls(&torque_sets)
+            .send_motor_controls(&motor_controls)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
             .into_iter()
             .map(|(k, v)| Ok((k, v.into())))
@@ -149,6 +155,68 @@ impl From<RobstrideMotorFeedback> for PyRobstrideMotorFeedback {
 
 #[gen_stub_pyclass]
 #[pyclass]
+#[derive(FromPyObject)]
+struct PyRobstrideMotorControlParams {
+    #[pyo3(get, set)]
+    position: f32,
+    #[pyo3(get, set)]
+    velocity: f32,
+    #[pyo3(get, set)]
+    kp: f32,
+    #[pyo3(get, set)]
+    kd: f32,
+    #[pyo3(get, set)]
+    torque: f32,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyRobstrideMotorControlParams {
+    #[new]
+    fn new(position: f32, velocity: f32, kp: f32, kd: f32, torque: f32) -> Self {
+        PyRobstrideMotorControlParams {
+            position,
+            velocity,
+            kp,
+            kd,
+            torque,
+        }
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "PyRobstrideMotorControlParams(position={:.2}, velocity={:.2}, kp={:.2}, kd={:.2}, torque={:.2})",
+            self.position, self.velocity, self.kp, self.kd, self.torque
+        ))
+    }
+}
+
+impl From<PyRobstrideMotorControlParams> for RobstrideMotorControlParams {
+    fn from(params: PyRobstrideMotorControlParams) -> Self {
+        RobstrideMotorControlParams {
+            position: params.position,
+            velocity: params.velocity,
+            kp: params.kp,
+            kd: params.kd,
+            torque: params.torque,
+        }
+    }
+}
+
+impl From<RobstrideMotorControlParams> for PyRobstrideMotorControlParams {
+    fn from(params: RobstrideMotorControlParams) -> Self {
+        PyRobstrideMotorControlParams {
+            position: params.position,
+            velocity: params.velocity,
+            kp: params.kp,
+            kd: params.kd,
+            torque: params.torque,
+        }
+    }
+}
+
+#[gen_stub_pyclass]
+#[pyclass]
 struct PyRobstrideMotorsSupervisor {
     inner: RobstrideMotorsSupervisor,
 }
@@ -172,13 +240,28 @@ impl PyRobstrideMotorsSupervisor {
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
 
-    fn set_target_position(&self, motor_id: u8, position: f32) -> PyResult<()> {
-        self.inner.set_target_position(motor_id, position);
+    fn set_position(&self, motor_id: u8, position: f32) -> PyResult<()> {
+        self.inner.set_position(motor_id, position);
         Ok(())
     }
 
-    fn set_kp_kd(&self, motor_id: u8, kp: f32, kd: f32) -> PyResult<()> {
-        self.inner.set_kp_kd(motor_id, kp, kd);
+    fn set_velocity(&self, motor_id: u8, velocity: f32) -> PyResult<()> {
+        self.inner.set_velocity(motor_id, velocity);
+        Ok(())
+    }
+
+    fn set_kp(&self, motor_id: u8, kp: f32) -> PyResult<()> {
+        self.inner.set_kp(motor_id, kp);
+        Ok(())
+    }
+
+    fn set_kd(&self, motor_id: u8, kd: f32) -> PyResult<()> {
+        self.inner.set_kd(motor_id, kd);
+        Ok(())
+    }
+
+    fn set_torque(&self, motor_id: u8, torque: f32) -> PyResult<()> {
+        self.inner.set_torque(motor_id, torque);
         Ok(())
     }
 
@@ -201,6 +284,11 @@ impl PyRobstrideMotorsSupervisor {
             .collect()
     }
 
+    fn toggle_pause(&self) -> PyResult<()> {
+        self.inner.toggle_pause();
+        Ok(())
+    }
+
     fn stop(&self) -> PyResult<()> {
         self.inner.stop();
         Ok(())
@@ -213,6 +301,20 @@ impl PyRobstrideMotorsSupervisor {
             motor_count
         ))
     }
+
+    fn set_params(&self, motor_id: u8, params: &PyRobstrideMotorControlParams) -> PyResult<()> {
+        self.inner.set_params(
+            motor_id,
+            RobstrideMotorControlParams {
+                position: params.position,
+                velocity: params.velocity,
+                kp: params.kp,
+                kd: params.kd,
+                torque: params.torque,
+            },
+        );
+        Ok(())
+    }
 }
 
 #[pymodule]
@@ -220,6 +322,7 @@ fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyRobstrideMotors>()?;
     m.add_class::<PyRobstrideMotorFeedback>()?;
     m.add_class::<PyRobstrideMotorsSupervisor>()?;
+    m.add_class::<PyRobstrideMotorControlParams>()?;
     Ok(())
 }
 

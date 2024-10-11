@@ -36,11 +36,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");
-    println!("  set_position / s <position>");
-    println!("  set_kp_kd / k <kp> <kd>");
+    println!("  p <position>");
+    println!("  v <velocity>");
+    println!("  t <torque>");
+    println!("  kp <kp>");
+    println!("  kd <kd>");
     println!("  zero / z");
     println!("  get_feedback / g");
-    println!("  pause / p");
+    println!("  pause / w");
     println!("  quit / q");
 
     loop {
@@ -56,24 +59,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         match parts[0] {
-            "set_position" | "s" => {
+            "p" => {
                 if parts.len() != 2 {
-                    println!("Usage: set_position <position>");
+                    println!("Usage: p <position>");
                     continue;
                 }
                 let position: f32 = parts[1].parse()?;
-                controller.set_target_position(test_id, position);
+                controller.set_position(test_id, position);
                 println!("Set target position to {}", position);
             }
-            "set_kp_kd" | "k" => {
-                if parts.len() != 3 {
-                    println!("Usage: set_kp_kd <kp> <kd>");
+            "v" => {
+                if parts.len() != 2 {
+                    println!("Usage: v <velocity>");
+                    continue;
+                }
+                let velocity: f32 = parts[1].parse()?;
+                controller.set_velocity(test_id, velocity);
+            }
+            "t" => {
+                if parts.len() != 2 {
+                    println!("Usage: t <torque>");
+                    continue;
+                }
+                let torque: f32 = parts[1].parse()?;
+                controller.set_torque(test_id, torque);
+            }
+            "kp" => {
+                if parts.len() != 2 {
+                    println!("Usage: kp <kp>");
                     continue;
                 }
                 let kp: f32 = parts[1].parse()?;
-                let kd: f32 = parts[2].parse()?;
-                controller.set_kp_kd(test_id, kp, kd);
-                println!("Set KP/KD for motor {} to {}/{}", test_id, kp, kd);
+                controller.set_kp(test_id, kp);
+                println!("Set KP for motor {} to {}", test_id, kp);
+            }
+            "kd" => {
+                if parts.len() != 2 {
+                    println!("Usage: kd <kd>");
+                    continue;
+                }
+                let kd: f32 = parts[1].parse()?;
+                controller.set_kd(test_id, kd);
+                println!("Set KD for motor {} to {}", test_id, kd);
             }
             "zero" | "z" => {
                 controller.add_motor_to_zero(test_id);
@@ -85,7 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Motor {}: {:?}", id, fb);
                 }
             }
-            "pause" | "p" => {
+            "pause" | "w" => {
                 controller.toggle_pause();
                 println!("Toggled pause state");
             }
@@ -95,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             _ => {
-                println!("Unknown command. Available commands: set_position, set_kp_kd, get_feedback, quit");
+                println!("Unknown command");
             }
         }
     }
