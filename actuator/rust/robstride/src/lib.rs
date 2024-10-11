@@ -238,16 +238,34 @@ fn tx_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io
     buffer.extend_from_slice(&pack.data[..pack.len as usize]);
     buffer.extend_from_slice(b"\r\n");
 
+    // println!(
+    //     "TX: {}",
+    //     buffer
+    //         .iter()
+    //         .map(|b| format!("{:02X}", b))
+    //         .collect::<Vec<String>>()
+    //         .join(" ")
+    // );
+
     port.write_all(&buffer)?;
     port.flush()?;
     Ok(())
 }
 
 fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> {
-    let mut buffer = [0u8; 17];
-    let bytes_read = port.read(&mut buffer)?;
+    let mut buffer = [0u8; 7];
+    port.read_exact(&mut buffer)?;
 
-    if bytes_read == 17 && buffer[0] == b'A' && buffer[1] == b'T' {
+    // print!(
+    //     "RX: {} ",
+    //     buffer
+    //         .iter()
+    //         .map(|b| format!("{:02X}", b))
+    //         .collect::<Vec<String>>()
+    //         .join(" ")
+    // );
+
+    if buffer[0] == b'A' && buffer[1] == b'T' {
         let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]) >> 3;
         let ex_id = ExId {
             id: (addr & 0xFF) as u8,
@@ -255,13 +273,27 @@ fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> 
             mode: unsafe { std::mem::transmute((addr >> 24) as u8) },
             res: 0,
         };
+        let len = buffer[6];
+        let mut buffer = vec![0u8; len as usize + 2];
+        port.read_exact(&mut buffer)?;
+
+        // println!(
+        //     "{}",
+        //     buffer
+        //         .iter()
+        //         .map(|b| format!("{:02X}", b))
+        //         .collect::<Vec<String>>()
+        //         .join(" ")
+        // );
 
         Ok(CanPack {
             ex_id,
-            len: buffer[6],
-            data: buffer[7..16].to_vec(),
+            len,
+            data: buffer,
         })
     } else {
+        println!("Failed to read CAN packet");
+
         Err(std::io::Error::new(
             std::io::ErrorKind::UnexpectedEof,
             "Failed to read CAN packet",
@@ -506,11 +538,16 @@ impl Motors {
         self.read_all_pending_responses()
     }
 
-    fn read_name(&mut self, motor_id: u8) -> Result<String, std::io::Error> {
+    fn read_string_param(
+        &mut self,
+        motor_id: u8,
+        index: u16,
+        num_packs: u8,
+    ) -> Result<String, std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: motor_id,
-                data: CAN_ID_BROADCAST as u16,
+                data: CAN_ID_DEBUG_UI as u16,
                 mode: CanComMode::ParaRead,
                 res: 0,
             },
@@ -518,24 +555,43 @@ impl Motors {
             data: vec![0; 8],
         };
 
-        let index: u16 = 0x1001;
+        let index: u16 = index;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
         tx_pack(&mut self.port, &pack)?;
 
-        match rx_unpack(&mut self.port) {
-            Ok(pack) => {
-                let name = pack
-                    .data
-                    .iter()
-                    .map(|&byte| byte as char)
-                    .collect::<String>();
-                Ok(name)
-            }
-            Err(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Failed to read motor name",
-            )),
+        let mut packs = Vec::new();
+        for _ in 0..num_packs {
+            packs.push(rx_unpack(&mut self.port)?);
         }
+
+        let name = packs
+            .iter()
+            .flat_map(|pack| pack.data[4..8].iter())
+            .map(|&b| b as char)
+            .filter(|&c| c != '\0') // Filter out null characters
+            .collect::<String>();
+        Ok(name)
+    }
+
+    fn read_uint_param(&mut self, motor_id: u8, index: u16) -> Result<u32, std::io::Error> {
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: motor_id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::ParaRead,
+                res: 0,
+            },
+            len: 8,
+            data: vec![0; 8],
+        };
+
+        let index: u16 = index;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        tx_pack(&mut self.port, &pack)?;
+
+        let pack = rx_unpack(&mut self.port)?;
+        let value = u32::from_le_bytes(pack.data[4..8].try_into().unwrap());
+        Ok(value)
     }
 
     pub fn read_names(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
@@ -543,54 +599,79 @@ impl Motors {
         let mut names = HashMap::new();
 
         for id in motor_ids {
-            let name = self.read_name(id)?;
+            let name = self.read_string_param(id, 0x0000, 4)?;
+            names.insert(id, name);
+        }
+        Ok(names)
+    }
+
+    pub fn read_bar_codes(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut names = HashMap::new();
+
+        for id in motor_ids {
+            let name = self.read_string_param(id, 0x0001, 4)?;
+            names.insert(id, name);
+        }
+        Ok(names)
+    }
+
+    pub fn read_build_dates(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut names = HashMap::new();
+
+        for id in motor_ids {
+            let name = self.read_string_param(id, 0x1001, 3)?;
             names.insert(id, name);
         }
 
         Ok(names)
     }
 
-    pub fn send_can_timeout(&mut self, timeout: u32) -> Result<(), std::io::Error> {
-        // Note: This doesn't work, need to debug with Robstride.
+    pub fn read_can_timeout(&mut self) -> Result<HashMap<u8, u32>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut timeouts = HashMap::new();
 
-        // let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
-        // let num_motors = motor_ids.len();
+        for id in motor_ids {
+            let timeout = self.read_uint_param(id, 0x200c)?;
+            timeouts.insert(id, timeout);
+        }
+        Ok(timeouts)
+    }
 
-        // for id in motor_ids {
-        //     let mut pack = CanPack {
-        //         ex_id: ExId {
-        //             id,
-        //             data: 0,
-        //             mode: CanComMode::ParaUpdate,
-        //             res: 0,
-        //         },
-        //         len: 8,
-        //         data: vec![0; 8],
-        //     };
+    pub fn send_can_timeout(
+        &mut self,
+        timeout: u32,
+    ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
 
-        //     let index: u16 = 0x200c;
-        //     pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        for id in motor_ids {
+            let mut pack = CanPack {
+                ex_id: ExId {
+                    id: id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::ParaWrite,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+            };
 
-        //     let timeout = timeout.clamp(0, 100000);
-        //     println!("Setting CAN timeout to {}", timeout);
-        //     pack.data[4..8].copy_from_slice(&timeout.to_le_bytes());
+            let index: u16 = 0x200c;
+            pack.data[..2].copy_from_slice(&index.to_le_bytes());
+            pack.data[2] = 0x04;
 
-        //     self.send_command(&pack)?;
-        // }
+            // Convert milliseconds to correct unit by multiplying by 20.
+            // Set to zero to disable timeout.
+            let timeout = (timeout * 20).clamp(0, 100000);
+            pack.data[4..8].copy_from_slice(&timeout.to_le_bytes());
 
-        // // Print the response.
-        // for _ in 0..num_motors {
-        //     match rx_unpack(&mut self.port) {
-        //         Ok(pack) => {
-        //             println!("Received pack: {:?}", pack);
-        //         }
-        //         Err(e) => {
-        //             println!("Failed to set CAN timeout: {}", e);
-        //         }
-        //     }
-        // }
+            self.send_command(&pack)?;
+        }
 
-        Ok(())
+        // After sending the reset command, sleep for a short time.
+        std::thread::sleep(self.sleep_time);
+        self.read_all_pending_responses()
     }
 
     pub fn send_reset(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
@@ -821,9 +902,6 @@ impl MotorsSupervisor {
             let _ =
                 motors.send_can_timeout((sleep_duration.lock().unwrap().as_micros() * 2) as u32);
             let _ = motors.send_start();
-
-            let names = motors.read_names();
-            println!("Names: {:?}", names);
 
             while *running.lock().unwrap() {
                 if *paused.lock().unwrap() {
