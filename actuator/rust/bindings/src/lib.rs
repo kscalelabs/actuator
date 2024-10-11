@@ -72,12 +72,12 @@ impl PyRobstrideMotors {
             .collect()
     }
 
-    fn send_torque_controls(
+    fn send_motor_controls(
         &mut self,
-        torque_sets: HashMap<u8, f32>,
+        motor_controls: HashMap<u8, (f32, f32, f32, f32, f32)>,
     ) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
         self.inner
-            .send_torque_controls(&torque_sets)
+            .send_motor_controls(&motor_controls)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
             .into_iter()
             .map(|(k, v)| Ok((k, v.into())))
@@ -172,13 +172,28 @@ impl PyRobstrideMotorsSupervisor {
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
 
-    fn set_target_position(&self, motor_id: u8, position: f32) -> PyResult<()> {
-        self.inner.set_target_position(motor_id, position);
+    fn set_p(&self, motor_id: u8, p_set: f32) -> PyResult<()> {
+        self.inner.set_p(motor_id, p_set);
         Ok(())
     }
 
-    fn set_kp_kd(&self, motor_id: u8, kp: f32, kd: f32) -> PyResult<()> {
-        self.inner.set_kp_kd(motor_id, kp, kd);
+    fn set_v(&self, motor_id: u8, v_set: f32) -> PyResult<()> {
+        self.inner.set_v(motor_id, v_set);
+        Ok(())
+    }
+
+    fn set_kp(&self, motor_id: u8, kp_set: f32) -> PyResult<()> {
+        self.inner.set_kp(motor_id, kp_set);
+        Ok(())
+    }
+
+    fn set_kd(&self, motor_id: u8, kd_set: f32) -> PyResult<()> {
+        self.inner.set_kd(motor_id, kd_set);
+        Ok(())
+    }
+
+    fn set_t(&self, motor_id: u8, t_set: f32) -> PyResult<()> {
+        self.inner.set_t(motor_id, t_set);
         Ok(())
     }
 
