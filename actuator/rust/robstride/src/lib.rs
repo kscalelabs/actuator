@@ -15,8 +15,6 @@ pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
 
 pub const BAUDRATE: u32 = 921600;
 
-const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
-
 pub struct MotorConfig {
     pub p_min: f32,
     pub p_max: f32,
@@ -24,10 +22,13 @@ pub struct MotorConfig {
     pub v_max: f32,
     pub kp_min: f32,
     pub kp_max: f32,
+    pub kp_default: f32,
     pub kd_min: f32,
     pub kd_max: f32,
+    pub kd_default: f32,
     pub t_min: f32,
     pub t_max: f32,
+    pub zero_on_init: bool,
 }
 
 lazy_static! {
@@ -42,10 +43,13 @@ lazy_static! {
                 v_max: 44.0,
                 kp_min: 0.0,
                 kp_max: 500.0,
+                kp_default: 20.0,
                 kd_min: 0.0,
                 kd_max: 5.0,
+                kd_default: 1.0,
                 t_min: -12.0,
                 t_max: 12.0,
+                zero_on_init: true, // Single encoder motor.
             },
         );
         // This is probably not correct, the Type02 is not released yet.
@@ -58,10 +62,13 @@ lazy_static! {
                 v_max: 44.0,
                 kp_min: 0.0,
                 kp_max: 500.0,
+                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 5.0,
+                kd_default: 1.0,
                 t_min: -12.0,
                 t_max: 12.0,
+                zero_on_init: false,
             },
         );
         m.insert(
@@ -73,10 +80,13 @@ lazy_static! {
                 v_max: 20.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
+                kp_default: 1000.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
+                kd_default: 10.0,
                 t_min: -60.0,
                 t_max: 60.0,
+                zero_on_init: false,
             },
         );
         m.insert(
@@ -88,10 +98,13 @@ lazy_static! {
                 v_max: 15.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
+                kp_default: 1000.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
+                kd_default: 10.0,
                 t_min: -120.0,
                 t_max: 120.0,
+                zero_on_init: false,
             },
         );
         m
@@ -99,7 +112,7 @@ lazy_static! {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum CanComMode {
     AnnounceDevId = 0,
     MotorCtrl,
@@ -147,6 +160,7 @@ pub enum RunMode {
     CspPositionMode = 5,
 }
 
+#[derive(Debug, Clone)]
 pub struct ExId {
     pub id: u8,
     pub data: u16,
@@ -154,6 +168,7 @@ pub struct ExId {
     pub res: u8,
 }
 
+#[derive(Debug, Clone)]
 pub struct CanPack {
     pub ex_id: ExId,
     pub len: u8,
@@ -236,16 +251,34 @@ fn tx_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io
     buffer.extend_from_slice(&pack.data[..pack.len as usize]);
     buffer.extend_from_slice(b"\r\n");
 
+    // println!(
+    //     "TX: {}",
+    //     buffer
+    //         .iter()
+    //         .map(|b| format!("{:02X}", b))
+    //         .collect::<Vec<String>>()
+    //         .join(" ")
+    // );
+
     port.write_all(&buffer)?;
     port.flush()?;
     Ok(())
 }
 
 fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> {
-    let mut buffer = [0u8; 17];
-    let bytes_read = port.read(&mut buffer)?;
+    let mut buffer = [0u8; 7];
+    port.read_exact(&mut buffer)?;
 
-    if bytes_read == 17 && buffer[0] == b'A' && buffer[1] == b'T' {
+    // print!(
+    //     "RX: {} ",
+    //     buffer
+    //         .iter()
+    //         .map(|b| format!("{:02X}", b))
+    //         .collect::<Vec<String>>()
+    //         .join(" ")
+    // );
+
+    if buffer[0] == b'A' && buffer[1] == b'T' {
         let addr = u32::from_be_bytes([buffer[2], buffer[3], buffer[4], buffer[5]]) >> 3;
         let ex_id = ExId {
             id: (addr & 0xFF) as u8,
@@ -253,13 +286,27 @@ fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> 
             mode: unsafe { std::mem::transmute((addr >> 24) as u8) },
             res: 0,
         };
+        let len = buffer[6];
+        let mut buffer = vec![0u8; len as usize + 2];
+        port.read_exact(&mut buffer)?;
+
+        // println!(
+        //     "{}",
+        //     buffer
+        //         .iter()
+        //         .map(|b| format!("{:02X}", b))
+        //         .collect::<Vec<String>>()
+        //         .join(" ")
+        // );
 
         Ok(CanPack {
             ex_id,
-            len: buffer[6],
-            data: buffer[7..16].to_vec(),
+            len,
+            data: buffer,
         })
     } else {
+        println!("Failed to read CAN packet");
+
         Err(std::io::Error::new(
             std::io::ErrorKind::UnexpectedEof,
             "Failed to read CAN packet",
@@ -504,6 +551,142 @@ impl Motors {
         self.read_all_pending_responses()
     }
 
+    fn read_string_param(
+        &mut self,
+        motor_id: u8,
+        index: u16,
+        num_packs: u8,
+    ) -> Result<String, std::io::Error> {
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: motor_id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::ParaRead,
+                res: 0,
+            },
+            len: 8,
+            data: vec![0; 8],
+        };
+
+        let index: u16 = index;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        tx_pack(&mut self.port, &pack)?;
+
+        let mut packs = Vec::new();
+        for _ in 0..num_packs {
+            packs.push(rx_unpack(&mut self.port)?);
+        }
+
+        let name = packs
+            .iter()
+            .flat_map(|pack| pack.data[4..8].iter())
+            .map(|&b| b as char)
+            .filter(|&c| c != '\0') // Filter out null characters
+            .collect::<String>();
+        Ok(name)
+    }
+
+    fn read_uint_param(&mut self, motor_id: u8, index: u16) -> Result<u32, std::io::Error> {
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: motor_id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::ParaRead,
+                res: 0,
+            },
+            len: 8,
+            data: vec![0; 8],
+        };
+
+        let index: u16 = index;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+        tx_pack(&mut self.port, &pack)?;
+
+        let pack = rx_unpack(&mut self.port)?;
+        let value = u32::from_le_bytes(pack.data[4..8].try_into().unwrap());
+        Ok(value)
+    }
+
+    pub fn read_names(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut names = HashMap::new();
+
+        for id in motor_ids {
+            let name = self.read_string_param(id, 0x0000, 4)?;
+            names.insert(id, name);
+        }
+        Ok(names)
+    }
+
+    pub fn read_bar_codes(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut names = HashMap::new();
+
+        for id in motor_ids {
+            let name = self.read_string_param(id, 0x0001, 4)?;
+            names.insert(id, name);
+        }
+        Ok(names)
+    }
+
+    pub fn read_build_dates(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut names = HashMap::new();
+
+        for id in motor_ids {
+            let name = self.read_string_param(id, 0x1001, 3)?;
+            names.insert(id, name);
+        }
+
+        Ok(names)
+    }
+
+    pub fn read_can_timeout(&mut self) -> Result<HashMap<u8, u32>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+        let mut timeouts = HashMap::new();
+
+        for id in motor_ids {
+            let timeout = self.read_uint_param(id, 0x200c)?;
+            timeouts.insert(id, timeout);
+        }
+        Ok(timeouts)
+    }
+
+    pub fn send_can_timeout(
+        &mut self,
+        timeout: u32,
+    ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
+        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
+
+        for id in motor_ids {
+            let mut pack = CanPack {
+                ex_id: ExId {
+                    id: id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::ParaWrite,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+            };
+
+            let index: u16 = 0x200c;
+            pack.data[..2].copy_from_slice(&index.to_le_bytes());
+            pack.data[2] = 0x04;
+
+            // Convert milliseconds to correct unit by multiplying by 20.
+            // Set to zero to disable timeout.
+            let timeout = (timeout * 20).clamp(0, 100000);
+            pack.data[4..8].copy_from_slice(&timeout.to_le_bytes());
+
+            self.send_command(&pack)?;
+        }
+
+        // After sending the reset command, sleep for a short time.
+        std::thread::sleep(self.sleep_time);
+        self.read_all_pending_responses()
+    }
+
     pub fn send_reset(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
         let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
 
@@ -580,15 +763,10 @@ impl Motors {
             let torque_int_set = float_to_uint(torque_set, config.t_min, config.t_max, 16);
 
             pack.ex_id.data = torque_int_set;
-
-            pack.data[0] = (pos_int_set >> 8) as u8;
-            pack.data[1] = (pos_int_set & 0xFF) as u8;
-            pack.data[2] = (vel_int_set >> 8) as u8;
-            pack.data[3] = (vel_int_set & 0xFF) as u8;
-            pack.data[4] = (kp_int_set >> 8) as u8;
-            pack.data[5] = (kp_int_set & 0xFF) as u8;
-            pack.data[6] = (kd_int_set >> 8) as u8;
-            pack.data[7] = (kd_int_set & 0xFF) as u8;
+            pack.data[0..2].copy_from_slice(&pos_int_set.to_be_bytes());
+            pack.data[2..4].copy_from_slice(&vel_int_set.to_be_bytes());
+            pack.data[4..6].copy_from_slice(&kp_int_set.to_be_bytes());
+            pack.data[6..8].copy_from_slice(&kd_int_set.to_be_bytes());
 
             self.send_command(&pack)
         } else {
@@ -597,6 +775,38 @@ impl Motors {
                 "Motor not found",
             ))
         }
+    }
+
+    fn send_pd_control(
+        &mut self,
+        motor_id: u8,
+        pos_set: f32,
+        vel_set: f32,
+        kp_set: f32,
+        kd_set: f32,
+    ) -> Result<(), std::io::Error> {
+        self.send_motor_control(motor_id, pos_set, vel_set, kp_set, kd_set, 0.0)
+    }
+
+    pub fn send_pd_controls(
+        &mut self,
+        pd_sets: &HashMap<u8, (f32, f32, f32, f32)>,
+    ) -> Result<HashMap<u8, MotorFeedback>, Box<dyn std::error::Error>> {
+        // Check if all provided motor IDs are valid
+        for &motor_id in pd_sets.keys() {
+            if !self.motor_configs.contains_key(&motor_id) {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid motor ID: {}", motor_id),
+                )));
+            }
+        }
+
+        // Send PD commands for each motor
+        for (&motor_id, &(pos_set, vel_set, kp, kd)) in pd_sets {
+            self.send_pd_control(motor_id, pos_set, vel_set, kp, kd)?;
+        }
+        self.read_all_pending_responses().map_err(|e| e.into())
     }
 
     fn send_torque_control(&mut self, motor_id: u8, torque_set: f32) -> Result<(), std::io::Error> {
@@ -621,7 +831,6 @@ impl Motors {
         for (&motor_id, &torque_set) in torque_sets {
             self.send_torque_control(motor_id, torque_set)?;
         }
-
         self.read_all_pending_responses().map_err(|e| e.into())
     }
 
@@ -669,16 +878,6 @@ impl Motors {
     }
 }
 
-fn get_default_kp_kd_values(motor_infos: &HashMap<u8, MotorType>) -> HashMap<u8, (f32, f32)> {
-    let mut kp_kd_values = HashMap::new();
-
-    for (&motor_id, _) in motor_infos {
-        kp_kd_values.insert(motor_id, (10.0, 1.0));
-    }
-
-    kp_kd_values
-}
-
 pub struct MotorsSupervisor {
     motors: Arc<Mutex<Motors>>,
     target_positions: Arc<Mutex<HashMap<u8, f32>>>,
@@ -687,6 +886,7 @@ pub struct MotorsSupervisor {
     latest_feedback: Arc<Mutex<HashMap<u8, MotorFeedback>>>,
     motors_to_zero: Arc<Mutex<HashSet<u8>>>,
     sleep_duration: Arc<Mutex<Duration>>,
+    paused: Arc<Mutex<bool>>,
 }
 
 impl MotorsSupervisor {
@@ -696,12 +896,28 @@ impl MotorsSupervisor {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos)?;
-        let kp_kd_values = get_default_kp_kd_values(&motor_infos);
+
+        // Get default KP/KD values for all motors.
+        let kp_kd_values = motors
+            .motor_configs
+            .iter()
+            .map(|(id, config)| (*id, (config.kp_default, config.kd_default)))
+            .collect::<HashMap<u8, (f32, f32)>>();
+
+        // Find motors that need to be zeroed on initialization.
+        let zero_on_init_motors = motors
+            .motor_configs
+            .iter()
+            .filter(|(_, &config)| config.zero_on_init)
+            .map(|(&id, _)| id)
+            .collect::<HashSet<u8>>();
 
         let motors = Arc::new(Mutex::new(motors));
+        let motors_to_zero = Arc::new(Mutex::new(zero_on_init_motors));
         let target_positions = Arc::new(Mutex::new(HashMap::new()));
         let kp_kd_values = Arc::new(Mutex::new(kp_kd_values));
         let running = Arc::new(Mutex::new(true));
+        let paused = Arc::new(Mutex::new(false));
 
         let controller = MotorsSupervisor {
             motors,
@@ -709,8 +925,9 @@ impl MotorsSupervisor {
             kp_kd_values,
             running,
             latest_feedback: Arc::new(Mutex::new(HashMap::new())),
-            motors_to_zero: Arc::new(Mutex::new(HashSet::new())),
-            sleep_duration: Arc::new(Mutex::new(Duration::from_micros(100))),
+            motors_to_zero,
+            sleep_duration: Arc::new(Mutex::new(Duration::from_micros(10))),
+            paused,
         };
 
         controller.start_control_thread();
@@ -726,19 +943,29 @@ impl MotorsSupervisor {
         let latest_feedback = Arc::clone(&self.latest_feedback);
         let motors_to_zero = Arc::clone(&self.motors_to_zero);
         let sleep_duration = Arc::clone(&self.sleep_duration);
+        let paused = Arc::clone(&self.paused);
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
             let _ = motors.send_reset();
+            let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
             let _ = motors.send_start();
 
             while *running.lock().unwrap() {
+                // If paused, just wait 100ms without sending any commands.
+                if *paused.lock().unwrap() {
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+
+                // Read latest feedback from motors.
                 {
                     let latest_feedback_from_motors = motors.get_latest_feedback();
                     let mut latest_feedback = latest_feedback.lock().unwrap();
                     *latest_feedback = latest_feedback_from_motors.clone();
                 }
 
+                // Send zero torque commands to motors that need to be zeroed.
                 {
                     let mut motor_ids_to_zero = motors_to_zero.lock().unwrap();
                     let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
@@ -750,7 +977,14 @@ impl MotorsSupervisor {
                     let _ = motors.send_torque_controls(&torque_commands);
                 }
 
+                // Send PD commands to motors.
                 {
+                    /*
+                    This code is equivalent, where we run closed-loop torque
+                    control, but on the host device rather than on the motor.
+
+                    const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
+
                     let target_positions = target_positions.lock().unwrap();
                     let kp_kd_values = kp_kd_values.lock().unwrap();
 
@@ -772,6 +1006,17 @@ impl MotorsSupervisor {
                     // println!("Torque commands: {:?}", torque_commands);
                     if !torque_commands.is_empty() {
                         let _ = motors.send_torque_controls(&torque_commands);
+                    }
+                    */
+
+                    let target_positions = target_positions.lock().unwrap();
+                    let kp_kd_values = kp_kd_values.lock().unwrap();
+
+                    let pd_sets = HashMap::from_iter(target_positions.iter().map(|(id, pos)| {
+                        (*id, (*pos, 0.0, kp_kd_values[id].0, kp_kd_values[id].1))
+                    }));
+                    if !pd_sets.is_empty() {
+                        let _ = motors.send_pd_controls(&pd_sets);
                     }
                 }
 
@@ -816,6 +1061,11 @@ impl MotorsSupervisor {
     pub fn get_latest_feedback(&self) -> HashMap<u8, MotorFeedback> {
         let latest_feedback = self.latest_feedback.lock().unwrap();
         latest_feedback.clone()
+    }
+
+    pub fn toggle_pause(&self) {
+        let mut paused = self.paused.lock().unwrap();
+        *paused = !*paused;
     }
 
     pub fn stop(&self) {

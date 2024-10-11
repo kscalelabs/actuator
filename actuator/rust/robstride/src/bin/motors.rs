@@ -95,7 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let motor_type = motor_type_from_str(motor_type_input.as_str())?;
 
     // Create motor instances
-    let mut motors = Motors::new(&port_name, HashMap::from([(test_id, motor_type)]))?;
+    let mut motors = Motors::new(&port_name, &HashMap::from([(test_id, motor_type)]))?;
 
     let mut last_command: i32 = -1;
 

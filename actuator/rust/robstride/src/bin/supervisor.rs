@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  set_kp_kd / k <kp> <kd>");
     println!("  zero / z");
     println!("  get_feedback / g");
+    println!("  pause / p");
     println!("  quit / q");
 
     loop {
@@ -83,6 +84,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for (id, fb) in feedback {
                     println!("Motor {}: {:?}", id, fb);
                 }
+            }
+            "pause" | "p" => {
+                controller.toggle_pause();
+                println!("Toggled pause state");
             }
             "quit" | "q" => {
                 controller.stop();
