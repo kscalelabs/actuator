@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let position: f32 = parts[1].parse()?;
-                controller.set_p(test_id, position);
+                controller.set_position(test_id, position);
                 println!("Set target position to {}", position);
             }
             "v" => {
@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let velocity: f32 = parts[1].parse()?;
-                controller.set_v(test_id, velocity);
+                controller.set_velocity(test_id, velocity);
             }
             "t" => {
                 if parts.len() != 2 {
@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let torque: f32 = parts[1].parse()?;
-                controller.set_t(test_id, torque);
+                controller.set_torque(test_id, torque);
             }
             "kp" => {
                 if parts.len() != 2 {

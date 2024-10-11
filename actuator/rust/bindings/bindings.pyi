@@ -3,6 +3,17 @@
 
 import typing
 
+class PyRobstrideMotorControlParams:
+    position: float
+    velocity: float
+    kp: float
+    kd: float
+    torque: float
+    def __new__(cls,position:float, velocity:float, kp:float, kd:float, torque:float): ...
+    def __repr__(self) -> str:
+        ...
+
+
 class PyRobstrideMotorFeedback:
     can_id: int
     position: float
@@ -28,7 +39,7 @@ class PyRobstrideMotors:
     def send_start(self) -> dict[int, PyRobstrideMotorFeedback]:
         ...
 
-    def send_torque_controls(self, torque_sets:typing.Mapping[int, float]) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_motor_controls(self, motor_controls:typing.Mapping[int, PyRobstrideMotorControlParams]) -> dict[int, PyRobstrideMotorFeedback]:
         ...
 
     def get_latest_feedback(self) -> dict[int, PyRobstrideMotorFeedback]:
@@ -43,10 +54,19 @@ class PyRobstrideMotors:
 
 class PyRobstrideMotorsSupervisor:
     def __new__(cls,port_name:str, motor_infos:typing.Mapping[int, str]): ...
-    def set_target_position(self, motor_id:int, position:float) -> None:
+    def set_position(self, motor_id:int, position:float) -> None:
         ...
 
-    def set_kp_kd(self, motor_id:int, kp:float, kd:float) -> None:
+    def set_velocity(self, motor_id:int, velocity:float) -> None:
+        ...
+
+    def set_kp(self, motor_id:int, kp:float) -> None:
+        ...
+
+    def set_kd(self, motor_id:int, kd:float) -> None:
+        ...
+
+    def set_torque(self, motor_id:int, torque:float) -> None:
         ...
 
     def set_sleep_duration(self, sleep_duration:float) -> None:
@@ -58,10 +78,16 @@ class PyRobstrideMotorsSupervisor:
     def get_latest_feedback(self) -> dict[int, PyRobstrideMotorFeedback]:
         ...
 
+    def toggle_pause(self) -> None:
+        ...
+
     def stop(self) -> None:
         ...
 
     def __repr__(self) -> str:
+        ...
+
+    def set_params(self, motor_id:int, params:PyRobstrideMotorControlParams) -> None:
         ...
 
 
