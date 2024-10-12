@@ -318,6 +318,19 @@ impl PyRobstrideMotorsSupervisor {
         );
         Ok(())
     }
+
+    fn get_total_commands(&self) -> PyResult<u64> {
+        Ok(self.inner.get_total_commands())
+    }
+
+    fn get_failed_commands(&self) -> PyResult<u64> {
+        Ok(self.inner.get_failed_commands())
+    }
+
+    fn reset_command_counters(&self) -> PyResult<()> {
+        self.inner.reset_command_counters();
+        Ok(())
+    }
 }
 
 #[pymodule]
