@@ -519,7 +519,7 @@ impl Motors {
         }
 
         // After setting the mode for all motors, sleep for a short time.
-        std::thread::sleep(self.sleep_time);
+        thread::sleep(self.sleep_time);
 
         self.read_all_pending_responses()
     }
@@ -556,7 +556,7 @@ impl Motors {
 
             self.send_command(&pack)?;
         }
-        std::thread::sleep(self.sleep_time);
+        thread::sleep(self.sleep_time);
 
         // Zero.
         for &id in &ids_to_zero {
@@ -573,7 +573,7 @@ impl Motors {
 
             self.send_command(&pack)?;
         }
-        std::thread::sleep(self.sleep_time);
+        thread::sleep(self.sleep_time);
 
         // Start.
         for &id in &ids_to_zero {
@@ -590,7 +590,7 @@ impl Motors {
 
             self.send_command(&pack)?;
         }
-        std::thread::sleep(self.sleep_time);
+        thread::sleep(self.sleep_time);
 
         self.read_all_pending_responses()
     }
@@ -727,7 +727,7 @@ impl Motors {
         }
 
         // After sending the reset command, sleep for a short time.
-        std::thread::sleep(self.sleep_time);
+        thread::sleep(self.sleep_time);
         self.read_all_pending_responses()
     }
 
@@ -750,7 +750,7 @@ impl Motors {
         }
 
         // After sending the reset command, sleep for a short time.
-        std::thread::sleep(self.sleep_time);
+        thread::sleep(self.sleep_time);
         self.read_all_pending_responses()
     }
 
@@ -773,7 +773,7 @@ impl Motors {
         }
 
         // After sending the start command, sleep for a short time.
-        std::thread::sleep(self.sleep_time);
+        thread::sleep(self.sleep_time);
         self.read_all_pending_responses()
     }
 
@@ -991,7 +991,7 @@ impl MotorsSupervisor {
                 {
                     // If paused, just wait a short time without sending any commands.
                     if *paused.read().unwrap() {
-                        std::thread::sleep(Duration::from_millis(10));
+                        thread::sleep(Duration::from_millis(10));
                         continue;
                     }
                 }
@@ -1057,9 +1057,9 @@ impl MotorsSupervisor {
                 let elapsed = loop_start_time.elapsed();
                 let min_sleep_duration = Duration::from_micros(1);
                 if target_duration > elapsed + min_sleep_duration {
-                    std::thread::sleep(target_duration - elapsed);
+                    thread::sleep(target_duration - elapsed);
                 } else {
-                    std::thread::sleep(min_sleep_duration);
+                    thread::sleep(min_sleep_duration);
                 }
             }
 
@@ -1228,7 +1228,7 @@ impl MotorsSupervisor {
             let mut running = self.running.write().unwrap();
             *running = false;
         }
-        std::thread::sleep(Duration::from_millis(200));
+        thread::sleep(Duration::from_millis(200));
     }
 
     pub fn set_min_update_rate(&self, rate: f64) {
