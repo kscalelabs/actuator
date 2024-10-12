@@ -1111,9 +1111,15 @@ impl MotorsSupervisor {
 
     pub fn get_position(&self, motor_id: u8) -> Result<f32, std::io::Error> {
         let target_params = self.target_params.lock().unwrap();
-        target_params.get(&motor_id)
+        target_params
+            .get(&motor_id)
             .map(|params| params.position)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Motor ID {} not found", motor_id),
+                )
+            })
     }
 
     pub fn set_velocity(&self, motor_id: u8, velocity: f32) {
@@ -1125,37 +1131,55 @@ impl MotorsSupervisor {
 
     pub fn get_velocity(&self, motor_id: u8) -> Result<f32, std::io::Error> {
         let target_params = self.target_params.lock().unwrap();
-        target_params.get(&motor_id)
+        target_params
+            .get(&motor_id)
             .map(|params| params.velocity)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Motor ID {} not found", motor_id),
+                )
+            })
     }
 
     pub fn set_kp(&self, motor_id: u8, kp: f32) {
         let mut target_params = self.target_params.lock().unwrap();
         if let Some(params) = target_params.get_mut(&motor_id) {
-            params.kp = kp;
+            params.kp = kp.clamp(0.0, kp); // Clamp kp to be non-negative.
         }
     }
 
     pub fn get_kp(&self, motor_id: u8) -> Result<f32, std::io::Error> {
         let target_params = self.target_params.lock().unwrap();
-        target_params.get(&motor_id)
+        target_params
+            .get(&motor_id)
             .map(|params| params.kp)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Motor ID {} not found", motor_id),
+                )
+            })
     }
 
     pub fn set_kd(&self, motor_id: u8, kd: f32) {
         let mut target_params = self.target_params.lock().unwrap();
         if let Some(params) = target_params.get_mut(&motor_id) {
-            params.kd = kd;
+            params.kd = kd.clamp(0.0, kd); // Clamp kd to be non-negative.
         }
     }
 
     pub fn get_kd(&self, motor_id: u8) -> Result<f32, std::io::Error> {
         let target_params = self.target_params.lock().unwrap();
-        target_params.get(&motor_id)
+        target_params
+            .get(&motor_id)
             .map(|params| params.kd)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Motor ID {} not found", motor_id),
+                )
+            })
     }
 
     pub fn set_torque(&self, motor_id: u8, torque: f32) {
@@ -1167,9 +1191,15 @@ impl MotorsSupervisor {
 
     pub fn get_torque(&self, motor_id: u8) -> Result<f32, std::io::Error> {
         let target_params = self.target_params.lock().unwrap();
-        target_params.get(&motor_id)
+        target_params
+            .get(&motor_id)
             .map(|params| params.torque)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Motor ID {} not found", motor_id),
+                )
+            })
     }
 
     pub fn add_motor_to_zero(&self, motor_id: u8) {
