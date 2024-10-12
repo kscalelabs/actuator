@@ -227,6 +227,7 @@ struct PyRobstrideMotorsSupervisor {
 #[pymethods]
 impl PyRobstrideMotorsSupervisor {
     #[new]
+    #[pyo3(signature = (port_name, motor_infos, verbose = false))]
     fn new(port_name: String, motor_infos: HashMap<u8, String>, verbose: bool) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()

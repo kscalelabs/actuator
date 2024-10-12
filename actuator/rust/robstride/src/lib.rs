@@ -976,7 +976,7 @@ impl MotorsSupervisor {
 
             let _ = motors.send_reset();
             let _ = motors.send_start();
-            // let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
+            let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
 
             while *running.lock().unwrap() {
                 // If paused, just wait 100ms without sending any commands.
