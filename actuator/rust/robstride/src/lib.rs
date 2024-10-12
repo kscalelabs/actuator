@@ -22,10 +22,8 @@ pub struct MotorConfig {
     pub v_max: f32,
     pub kp_min: f32,
     pub kp_max: f32,
-    pub kp_default: f32,
     pub kd_min: f32,
     pub kd_max: f32,
-    pub kd_default: f32,
     pub t_min: f32,
     pub t_max: f32,
     pub zero_on_init: bool,
@@ -43,10 +41,8 @@ lazy_static! {
                 v_max: 44.0,
                 kp_min: 0.0,
                 kp_max: 500.0,
-                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 5.0,
-                kd_default: 1.0,
                 t_min: -12.0,
                 t_max: 12.0,
                 zero_on_init: true, // Single encoder motor.
@@ -62,10 +58,8 @@ lazy_static! {
                 v_max: 44.0,
                 kp_min: 0.0,
                 kp_max: 500.0,
-                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 5.0,
-                kd_default: 1.0,
                 t_min: -12.0,
                 t_max: 12.0,
                 zero_on_init: false,
@@ -80,10 +74,8 @@ lazy_static! {
                 v_max: 20.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
-                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
-                kd_default: 1.0,
                 t_min: -60.0,
                 t_max: 60.0,
                 zero_on_init: false,
@@ -98,10 +90,8 @@ lazy_static! {
                 v_max: 15.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
-                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
-                kd_default: 1.0,
                 t_min: -120.0,
                 t_max: 120.0,
                 zero_on_init: false,
@@ -921,15 +911,15 @@ impl MotorsSupervisor {
         // Get default KP/KD values for all motors.
         let target_params = motors
             .motor_configs
-            .iter()
-            .map(|(id, config)| {
+            .keys()
+            .map(|id| {
                 (
                     *id,
                     MotorControlParams {
                         position: 0.0,
                         velocity: 0.0,
-                        kp: config.kp_default,
-                        kd: config.kd_default,
+                        kp: 0.0,
+                        kd: 0.0,
                         torque: 0.0,
                     },
                 )
@@ -1119,11 +1109,25 @@ impl MotorsSupervisor {
         }
     }
 
+    pub fn get_position(&self, motor_id: u8) -> Result<f32, std::io::Error> {
+        let target_params = self.target_params.lock().unwrap();
+        target_params.get(&motor_id)
+            .map(|params| params.position)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+    }
+
     pub fn set_velocity(&self, motor_id: u8, velocity: f32) {
         let mut target_params = self.target_params.lock().unwrap();
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.velocity = velocity;
         }
+    }
+
+    pub fn get_velocity(&self, motor_id: u8) -> Result<f32, std::io::Error> {
+        let target_params = self.target_params.lock().unwrap();
+        target_params.get(&motor_id)
+            .map(|params| params.velocity)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
     }
 
     pub fn set_kp(&self, motor_id: u8, kp: f32) {
@@ -1133,6 +1137,13 @@ impl MotorsSupervisor {
         }
     }
 
+    pub fn get_kp(&self, motor_id: u8) -> Result<f32, std::io::Error> {
+        let target_params = self.target_params.lock().unwrap();
+        target_params.get(&motor_id)
+            .map(|params| params.kp)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+    }
+
     pub fn set_kd(&self, motor_id: u8, kd: f32) {
         let mut target_params = self.target_params.lock().unwrap();
         if let Some(params) = target_params.get_mut(&motor_id) {
@@ -1140,11 +1151,25 @@ impl MotorsSupervisor {
         }
     }
 
+    pub fn get_kd(&self, motor_id: u8) -> Result<f32, std::io::Error> {
+        let target_params = self.target_params.lock().unwrap();
+        target_params.get(&motor_id)
+            .map(|params| params.kd)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
+    }
+
     pub fn set_torque(&self, motor_id: u8, torque: f32) {
         let mut target_params = self.target_params.lock().unwrap();
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.torque = torque;
         }
+    }
+
+    pub fn get_torque(&self, motor_id: u8) -> Result<f32, std::io::Error> {
+        let target_params = self.target_params.lock().unwrap();
+        target_params.get(&motor_id)
+            .map(|params| params.torque)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Motor ID {} not found", motor_id)))
     }
 
     pub fn add_motor_to_zero(&self, motor_id: u8) {

@@ -259,9 +259,21 @@ impl PyRobstrideMotorsSupervisor {
         Ok(())
     }
 
+    fn get_position(&self, motor_id: u8) -> PyResult<f32> {
+        self.inner
+            .get_position(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
     fn set_velocity(&self, motor_id: u8, velocity: f32) -> PyResult<()> {
         self.inner.set_velocity(motor_id, velocity);
         Ok(())
+    }
+
+    fn get_velocity(&self, motor_id: u8) -> PyResult<f32> {
+        self.inner
+            .get_velocity(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn set_kp(&self, motor_id: u8, kp: f32) -> PyResult<()> {
@@ -269,14 +281,32 @@ impl PyRobstrideMotorsSupervisor {
         Ok(())
     }
 
+    fn get_kp(&self, motor_id: u8) -> PyResult<f32> {
+        self.inner
+            .get_kp(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
     fn set_kd(&self, motor_id: u8, kd: f32) -> PyResult<()> {
         self.inner.set_kd(motor_id, kd);
         Ok(())
     }
 
+    fn get_kd(&self, motor_id: u8) -> PyResult<f32> {
+        self.inner
+            .get_kd(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
     fn set_torque(&self, motor_id: u8, torque: f32) -> PyResult<()> {
         self.inner.set_torque(motor_id, torque);
         Ok(())
+    }
+
+    fn get_torque(&self, motor_id: u8) -> PyResult<f32> {
+        self.inner
+            .get_torque(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn add_motor_to_zero(&self, motor_id: u8) -> PyResult<()> {
