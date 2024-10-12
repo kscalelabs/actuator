@@ -1055,7 +1055,12 @@ impl MotorsSupervisor {
                 let target_duration =
                     Duration::from_secs_f64(1.0 / *target_update_rate.read().unwrap());
                 let elapsed = loop_start_time.elapsed();
-                std::thread::sleep((target_duration - elapsed).max(Duration::from_micros(1)));
+                let min_sleep_duration = Duration::from_micros(1);
+                if target_duration > elapsed + min_sleep_duration {
+                    std::thread::sleep(target_duration - elapsed);
+                } else {
+                    std::thread::sleep(min_sleep_duration);
+                }
             }
 
             let motor_ids: Vec<u8> = motors
