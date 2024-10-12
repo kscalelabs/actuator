@@ -9,6 +9,7 @@ use robstride::{
 };
 use std::collections::HashMap;
 use std::time::Duration;
+
 #[gen_stub_pyclass]
 #[pyclass]
 struct PyRobstrideMotors {
