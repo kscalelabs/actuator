@@ -8,6 +8,10 @@ use std::io::{self, Write};
 struct Args {
     #[arg(short, long, help = "Enable verbose output")]
     verbose: bool,
+    #[arg(short, long, help = "Minimum update rate (Hz)", default_value_t = 10.0)]
+    min_update_rate: f64,
+    #[arg(short, long, help = "Target update rate (Hz)", default_value_t = 50.0)]
+    target_update_rate: f64,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -42,7 +46,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let motor_type = motor_type_from_str(motor_type_input.as_str())?;
     let motor_infos: HashMap<u8, MotorType> = HashMap::from([(test_id, motor_type)]);
-    let controller = MotorsSupervisor::new(&port_name, &motor_infos, args.verbose)?;
+    let controller = MotorsSupervisor::new(
+        &port_name,
+        &motor_infos,
+        args.verbose,
+        args.min_update_rate,
+        args.target_update_rate,
+    )?;
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");

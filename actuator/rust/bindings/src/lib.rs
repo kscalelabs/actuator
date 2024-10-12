@@ -8,7 +8,6 @@ use robstride::{
     MotorsSupervisor as RobstrideMotorsSupervisor,
 };
 use std::collections::HashMap;
-use std::time::Duration;
 
 #[gen_stub_pyclass]
 #[pyclass]
@@ -227,8 +226,14 @@ struct PyRobstrideMotorsSupervisor {
 #[pymethods]
 impl PyRobstrideMotorsSupervisor {
     #[new]
-    #[pyo3(signature = (port_name, motor_infos, verbose = false))]
-    fn new(port_name: String, motor_infos: HashMap<u8, String>, verbose: bool) -> PyResult<Self> {
+    #[pyo3(signature = (port_name, motor_infos, verbose = false, min_update_rate = 10.0, target_update_rate = 50.0))]
+    fn new(
+        port_name: String,
+        motor_infos: HashMap<u8, String>,
+        verbose: bool,
+        min_update_rate: f64,
+        target_update_rate: f64,
+    ) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
             .map(|(id, type_str)| {
@@ -237,8 +242,14 @@ impl PyRobstrideMotorsSupervisor {
             })
             .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
-        let controller = RobstrideMotorsSupervisor::new(&port_name, &motor_infos, verbose)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        let controller = RobstrideMotorsSupervisor::new(
+            &port_name,
+            &motor_infos,
+            verbose,
+            min_update_rate,
+            target_update_rate,
+        )
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
@@ -265,12 +276,6 @@ impl PyRobstrideMotorsSupervisor {
 
     fn set_torque(&self, motor_id: u8, torque: f32) -> PyResult<()> {
         self.inner.set_torque(motor_id, torque);
-        Ok(())
-    }
-
-    fn set_sleep_duration(&self, sleep_duration: f32) -> PyResult<()> {
-        self.inner
-            .set_sleep_duration(Duration::from_millis(sleep_duration as u64));
         Ok(())
     }
 
@@ -330,6 +335,20 @@ impl PyRobstrideMotorsSupervisor {
     fn reset_command_counters(&self) -> PyResult<()> {
         self.inner.reset_command_counters();
         Ok(())
+    }
+
+    fn set_min_update_rate(&self, rate: f64) -> PyResult<()> {
+        self.inner.set_min_update_rate(rate);
+        Ok(())
+    }
+
+    fn set_target_update_rate(&self, rate: f64) -> PyResult<()> {
+        self.inner.set_target_update_rate(rate);
+        Ok(())
+    }
+
+    fn get_actual_update_rate(&self) -> PyResult<f64> {
+        Ok(self.inner.get_actual_update_rate())
     }
 }
 

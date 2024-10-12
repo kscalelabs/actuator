@@ -898,11 +898,13 @@ pub struct MotorsSupervisor {
     running: Arc<Mutex<bool>>,
     latest_feedback: Arc<Mutex<HashMap<u8, MotorFeedback>>>,
     motors_to_zero: Arc<Mutex<HashSet<u8>>>,
-    sleep_duration: Arc<Mutex<Duration>>,
     paused: Arc<Mutex<bool>>,
     restart: Arc<Mutex<bool>>,
     total_commands: Arc<Mutex<u64>>,
     failed_commands: Arc<Mutex<u64>>,
+    min_update_rate: Arc<Mutex<f64>>,
+    target_update_rate: Arc<Mutex<f64>>,
+    actual_update_rate: Arc<Mutex<f64>>,
 }
 
 impl MotorsSupervisor {
@@ -910,6 +912,8 @@ impl MotorsSupervisor {
         port_name: &str,
         motor_infos: &HashMap<u8, MotorType>,
         verbose: bool,
+        min_update_rate: f64,
+        target_update_rate: f64,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos, verbose)?;
@@ -953,11 +957,13 @@ impl MotorsSupervisor {
             running,
             latest_feedback: Arc::new(Mutex::new(HashMap::new())),
             motors_to_zero,
-            sleep_duration: Arc::new(Mutex::new(Duration::from_micros(10))),
             paused,
             restart,
             total_commands: Arc::new(Mutex::new(0)),
             failed_commands: Arc::new(Mutex::new(0)),
+            min_update_rate: Arc::new(Mutex::new(min_update_rate)),
+            target_update_rate: Arc::new(Mutex::new(target_update_rate)),
+            actual_update_rate: Arc::new(Mutex::new(0.0)),
         };
 
         controller.start_control_thread();
@@ -971,34 +977,56 @@ impl MotorsSupervisor {
         let running = Arc::clone(&self.running);
         let latest_feedback = Arc::clone(&self.latest_feedback);
         let motors_to_zero = Arc::clone(&self.motors_to_zero);
-        let sleep_duration = Arc::clone(&self.sleep_duration);
         let paused = Arc::clone(&self.paused);
         let restart = Arc::clone(&self.restart);
         let total_commands = Arc::clone(&self.total_commands);
         let failed_commands = Arc::clone(&self.failed_commands);
+        let min_update_rate = Arc::clone(&self.min_update_rate);
+        let target_update_rate = Arc::clone(&self.target_update_rate);
+        let actual_update_rate = Arc::clone(&self.actual_update_rate);
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
 
             let _ = motors.send_reset();
             let _ = motors.send_start();
-            let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
 
-            while *running.lock().unwrap() {
-                // If paused, just wait 100ms without sending any commands.
-                if *paused.lock().unwrap() {
-                    std::thread::sleep(Duration::from_millis(100));
-                    continue;
-                }
+            // Set CAN timeout based on minimum update rate
+            let can_timeout = (1000.0 / *min_update_rate.lock().unwrap()) as u32;
+            let _ = motors.send_can_timeout(can_timeout);
 
-                if *restart.lock().unwrap() {
-                    *restart.lock().unwrap() = false;
-                    let _ = motors.send_reset();
-                    let _ = motors.send_start();
-                }
+            let mut last_update_time = std::time::Instant::now();
 
-                // Read latest feedback from motors.
+            loop {
                 {
+                    // If not running, break the loop.
+                    if !*running.lock().unwrap() {
+                        break;
+                    }
+                }
+
+                {
+                    // If paused, just wait a short time without sending any commands.
+                    if *paused.lock().unwrap() {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                }
+
+                {
+                    // If restart is requested, reset and restart the motors.
+                    let mut restart = restart.lock().unwrap();
+                    if *restart {
+                        *restart = false;
+                        let _ = motors.send_reset();
+                        let _ = motors.send_start();
+                    }
+                }
+
+                let loop_start_time = std::time::Instant::now();
+
+                {
+                    // Read latest feedback from motors.
                     let latest_feedback_from_motors = motors.get_latest_feedback();
                     let mut latest_feedback = latest_feedback.lock().unwrap();
                     *latest_feedback = latest_feedback_from_motors.clone();
@@ -1034,8 +1062,18 @@ impl MotorsSupervisor {
                     *total_commands.lock().unwrap() += 1;
                 }
 
-                {
-                    std::thread::sleep(sleep_duration.lock().unwrap().clone());
+                // Calculate actual update rate
+                let elapsed = loop_start_time.duration_since(last_update_time);
+                last_update_time = loop_start_time;
+                let current_rate = 1.0 / elapsed.as_secs_f64();
+                *actual_update_rate.lock().unwrap() = current_rate;
+
+                // Sleep to maintain target update rate
+                let target_duration =
+                    Duration::from_secs_f64(1.0 / *target_update_rate.lock().unwrap());
+                let elapsed = loop_start_time.elapsed();
+                if elapsed < target_duration {
+                    std::thread::sleep(target_duration - elapsed);
                 }
             }
 
@@ -1109,11 +1147,6 @@ impl MotorsSupervisor {
         }
     }
 
-    pub fn set_sleep_duration(&self, sleep_duration: Duration) {
-        let mut sleep_duration_to_set = self.sleep_duration.lock().unwrap();
-        *sleep_duration_to_set = sleep_duration;
-    }
-
     pub fn add_motor_to_zero(&self, motor_id: u8) {
         // We need to set the motor parameters to zero to avoid the motor
         // rapidly changing to the new target after it is zeroed.
@@ -1145,6 +1178,23 @@ impl MotorsSupervisor {
             *running = false;
         }
         std::thread::sleep(Duration::from_millis(200));
+    }
+
+    pub fn set_min_update_rate(&self, rate: f64) {
+        let mut min_rate = self.min_update_rate.lock().unwrap();
+        *min_rate = rate;
+        let can_timeout = (1000.0 / rate) as u32;
+        let mut motors = self.motors.lock().unwrap();
+        let _ = motors.send_can_timeout(can_timeout);
+    }
+
+    pub fn set_target_update_rate(&self, rate: f64) {
+        let mut target_rate = self.target_update_rate.lock().unwrap();
+        *target_rate = rate;
+    }
+
+    pub fn get_actual_update_rate(&self) -> f64 {
+        *self.actual_update_rate.lock().unwrap()
     }
 }
 
