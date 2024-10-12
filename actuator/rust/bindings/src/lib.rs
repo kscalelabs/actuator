@@ -8,7 +8,6 @@ use robstride::{
     MotorsSupervisor as RobstrideMotorsSupervisor,
 };
 use std::collections::HashMap;
-use std::time::Duration;
 
 #[gen_stub_pyclass]
 #[pyclass]
