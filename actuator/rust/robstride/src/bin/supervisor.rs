@@ -1,8 +1,18 @@
+use clap::Parser;
 use robstride::{motor_type_from_str, MotorType, MotorsSupervisor};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, help = "Enable verbose output")]
+    verbose: bool,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
     print!("Enter the TEST_ID (u8): ");
     io::stdout().flush()?;
     let mut input = String::new();
@@ -32,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let motor_type = motor_type_from_str(motor_type_input.as_str())?;
     let motor_infos: HashMap<u8, MotorType> = HashMap::from([(test_id, motor_type)]);
-    let controller = MotorsSupervisor::new(&port_name, &motor_infos)?;
+    let controller = MotorsSupervisor::new(&port_name, &motor_infos, args.verbose)?;
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");

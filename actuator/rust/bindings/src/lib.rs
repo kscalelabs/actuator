@@ -19,7 +19,8 @@ struct PyRobstrideMotors {
 #[pymethods]
 impl PyRobstrideMotors {
     #[new]
-    fn new(port_name: String, motor_infos: HashMap<u8, String>) -> PyResult<Self> {
+    #[pyo3(signature = (port_name, motor_infos, verbose = false))]
+    fn new(port_name: String, motor_infos: HashMap<u8, String>, verbose: bool) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
             .map(|(id, type_str)| {
@@ -28,7 +29,7 @@ impl PyRobstrideMotors {
             })
             .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
-        let motors = RobstrideMotors::new(&port_name, &motor_infos)
+        let motors = RobstrideMotors::new(&port_name, &motor_infos, verbose)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(PyRobstrideMotors { inner: motors })
@@ -225,7 +226,7 @@ struct PyRobstrideMotorsSupervisor {
 #[pymethods]
 impl PyRobstrideMotorsSupervisor {
     #[new]
-    fn new(port_name: String, motor_infos: HashMap<u8, String>) -> PyResult<Self> {
+    fn new(port_name: String, motor_infos: HashMap<u8, String>, verbose: bool) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
             .map(|(id, type_str)| {
@@ -234,7 +235,7 @@ impl PyRobstrideMotorsSupervisor {
             })
             .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
-        let controller = RobstrideMotorsSupervisor::new(&port_name, &motor_infos)
+        let controller = RobstrideMotorsSupervisor::new(&port_name, &motor_infos, verbose)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(PyRobstrideMotorsSupervisor { inner: controller })

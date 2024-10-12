@@ -43,7 +43,7 @@ lazy_static! {
                 v_max: 44.0,
                 kp_min: 0.0,
                 kp_max: 500.0,
-                kp_default: 20.0,
+                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 5.0,
                 kd_default: 1.0,
@@ -80,10 +80,10 @@ lazy_static! {
                 v_max: 20.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
-                kp_default: 100.0,
+                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
-                kd_default: 10.0,
+                kd_default: 1.0,
                 t_min: -60.0,
                 t_max: 60.0,
                 zero_on_init: false,
@@ -98,10 +98,10 @@ lazy_static! {
                 v_max: 15.0,
                 kp_min: 0.0,
                 kp_max: 5000.0,
-                kp_default: 300.0,
+                kp_default: 10.0,
                 kd_min: 0.0,
                 kd_max: 100.0,
-                kd_default: 10.0,
+                kd_default: 1.0,
                 t_min: -120.0,
                 t_max: 120.0,
                 zero_on_init: false,
@@ -222,7 +222,7 @@ fn pack_bits(values: &[u32], bit_lengths: &[u8]) -> u32 {
     let mut result: u32 = 0;
     let mut current_shift = 0;
 
-    for (&value, &bits) in values.iter().zip(bit_lengths.iter()).rev() {
+    for (&value, &bits) in values.iter().zip(bit_lengths.iter()) {
         let mask = (1 << bits) - 1;
         result |= (value & mask) << current_shift;
         current_shift += bits;
@@ -235,25 +235,24 @@ fn unpack_bits(value: u32, bit_lengths: &[u8]) -> Vec<u32> {
     let mut result = Vec::new();
     let mut current_value = value;
 
-    for &bits in bit_lengths.iter().rev() {
+    for &bits in bit_lengths.iter() {
         let mask = (1 << bits) - 1;
         result.push(current_value & mask);
         current_value >>= bits;
     }
 
-    result.reverse();
     result
 }
 
 fn pack_ex_id(ex_id: &ExId) -> [u8; 4] {
     let addr = (pack_bits(
         &[
-            ex_id.res as u32,
-            ex_id.mode as u32,
-            ex_id.data as u32,
             ex_id.id as u32,
+            ex_id.data as u32,
+            ex_id.mode as u32,
+            ex_id.res as u32,
         ],
-        &[3, 5, 16, 8],
+        &[8, 16, 5, 3],
     ) << 3)
         | 0x00000004;
     addr.to_be_bytes()
@@ -261,16 +260,20 @@ fn pack_ex_id(ex_id: &ExId) -> [u8; 4] {
 
 fn unpack_ex_id(addr: [u8; 4]) -> ExId {
     let addr = u32::from_be_bytes(addr);
-    let addr = unpack_bits(addr >> 3, &[3, 5, 16, 8]);
+    let addr = unpack_bits(addr >> 3, &[8, 16, 5, 3]);
     ExId {
-        res: addr[0] as u8,
-        mode: unsafe { std::mem::transmute(addr[1] as u8) },
-        data: addr[2] as u16,
-        id: addr[3] as u8,
+        id: addr[0] as u8,
+        data: addr[1] as u16,
+        mode: unsafe { std::mem::transmute(addr[2] as u8) },
+        res: addr[3] as u8,
     }
 }
 
-fn tx_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io::Error> {
+fn tx_pack(
+    port: &mut Box<dyn SerialPort>,
+    pack: &CanPack,
+    verbose: bool,
+) -> Result<(), std::io::Error> {
     let mut buffer = Vec::new();
     buffer.extend_from_slice(b"AT");
 
@@ -279,52 +282,45 @@ fn tx_pack(port: &mut Box<dyn SerialPort>, pack: &CanPack) -> Result<(), std::io
     buffer.extend_from_slice(&pack.data[..pack.len as usize]);
     buffer.extend_from_slice(b"\r\n");
 
-    // println!(
-    //     "TX: {}",
-    //     buffer
-    //         .iter()
-    //         .map(|b| format!("{:02X}", b))
-    //         .collect::<Vec<String>>()
-    //         .join(" ")
-    // );
+    if verbose {
+        println!(
+            "TX: {}",
+            buffer
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<String>>()
+                .join(" ")
+        );
+    }
 
     port.write_all(&buffer)?;
     port.flush()?;
     Ok(())
 }
 
-fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> {
-    let mut buffer = [0u8; 7];
-    port.read_exact(&mut buffer)?;
+fn rx_unpack(port: &mut Box<dyn SerialPort>, verbose: bool) -> Result<CanPack, std::io::Error> {
+    let mut buffer = [0u8; 17];
+    let bytes_read = port.read(&mut buffer)?;
 
-    // print!(
-    //     "RX: {} ",
-    //     buffer
-    //         .iter()
-    //         .map(|b| format!("{:02X}", b))
-    //         .collect::<Vec<String>>()
-    //         .join(" ")
-    // );
+    if verbose {
+        println!(
+            "RX: {} ",
+            buffer
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<String>>()
+                .join(" ")
+        );
+    }
 
-    if buffer[0] == b'A' && buffer[1] == b'T' {
+    if bytes_read == 17 && buffer[0] == b'A' && buffer[1] == b'T' {
         let ex_id = unpack_ex_id([buffer[2], buffer[3], buffer[4], buffer[5]]);
         let len = buffer[6];
-        let mut buffer = vec![0u8; len as usize + 2];
-        port.read_exact(&mut buffer)?;
-
-        // println!(
-        //     "{}",
-        //     buffer
-        //         .iter()
-        //         .map(|b| format!("{:02X}", b))
-        //         .collect::<Vec<String>>()
-        //         .join(" ")
-        // );
 
         Ok(CanPack {
             ex_id,
             len,
-            data: buffer,
+            data: buffer[7..(7 + len as usize)].to_vec(),
         })
     } else {
         Err(std::io::Error::new(
@@ -334,12 +330,26 @@ fn rx_unpack(port: &mut Box<dyn SerialPort>) -> Result<CanPack, std::io::Error> 
     }
 }
 
-fn rx_unpack_feedback(port: &mut Box<dyn SerialPort>) -> Result<MotorFeedbackRaw, std::io::Error> {
-    match rx_unpack(port) {
+fn rx_unpack_feedback(
+    port: &mut Box<dyn SerialPort>,
+    verbose: bool,
+) -> Result<MotorFeedbackRaw, std::io::Error> {
+    match rx_unpack(port, verbose) {
         Ok(pack) => {
             let can_id = (pack.ex_id.data & 0x00FF) as u8;
             let faults = (pack.ex_id.data & 0x3F00) >> 8;
             let mode = unsafe { std::mem::transmute(((pack.ex_id.data & 0xC000) >> 14) as u8) };
+
+            if pack.ex_id.mode != CanComMode::MotorFeedback {
+                return Ok(MotorFeedbackRaw {
+                    can_id,
+                    pos_int: 0,
+                    vel_int: 0,
+                    torque_int: 0,
+                    mode,
+                    faults,
+                });
+            }
 
             let pos_int = u16::from_be_bytes([pack.data[0], pack.data[1]]);
             let vel_int = u16::from_be_bytes([pack.data[2], pack.data[3]]);
@@ -407,12 +417,14 @@ pub struct Motors {
     pending_responses: usize,
     mode: RunMode,
     sleep_time: Duration,
+    verbose: bool,
 }
 
 impl Motors {
     pub fn new(
         port_name: &str,
         motor_infos: &HashMap<u8, MotorType>,
+        verbose: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let port = init_serial_port(port_name)?;
         let motor_configs: HashMap<u8, &'static MotorConfig> = motor_infos
@@ -432,11 +444,12 @@ impl Motors {
             pending_responses: 0,
             mode: RunMode::UnsetMode,
             sleep_time: Duration::from_millis(50),
+            verbose,
         })
     }
 
     fn send_command(&mut self, pack: &CanPack) -> Result<(), std::io::Error> {
-        tx_pack(&mut self.port, pack)?;
+        tx_pack(&mut self.port, pack, self.verbose)?;
         self.pending_responses += 1;
         Ok(())
     }
@@ -458,10 +471,10 @@ impl Motors {
 
             let index: u16 = 0x7005;
             pack.data[..2].copy_from_slice(&index.to_le_bytes());
-            tx_pack(&mut self.port, &pack)?;
+            tx_pack(&mut self.port, &pack, self.verbose)?;
         }
 
-        match rx_unpack(&mut self.port) {
+        match rx_unpack(&mut self.port, self.verbose) {
             Ok(pack) => {
                 let mode = unsafe { std::mem::transmute(pack.data[4] as u8) };
                 Ok(HashMap::from([(pack.ex_id.id, mode)]))
@@ -611,11 +624,11 @@ impl Motors {
 
         let index: u16 = index;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        tx_pack(&mut self.port, &pack)?;
+        tx_pack(&mut self.port, &pack, self.verbose)?;
 
         let mut packs = Vec::new();
         for _ in 0..num_packs {
-            packs.push(rx_unpack(&mut self.port)?);
+            packs.push(rx_unpack(&mut self.port, self.verbose)?);
         }
 
         let name = packs
@@ -641,9 +654,9 @@ impl Motors {
 
         let index: u16 = index;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        tx_pack(&mut self.port, &pack)?;
+        tx_pack(&mut self.port, &pack, self.verbose)?;
 
-        let pack = rx_unpack(&mut self.port)?;
+        let pack = rx_unpack(&mut self.port, self.verbose)?;
         let value = u16::from_le_bytes(pack.data[4..6].try_into().unwrap());
         Ok(value)
     }
@@ -837,7 +850,7 @@ impl Motors {
 
     fn read_all_pending_responses(&mut self) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
         while self.pending_responses > 0 {
-            match rx_unpack_feedback(&mut self.port) {
+            match rx_unpack_feedback(&mut self.port, self.verbose) {
                 Ok(raw_feedback) => {
                     if let Some(config) = self.motor_configs.get(&raw_feedback.can_id) {
                         let position =
@@ -894,9 +907,10 @@ impl MotorsSupervisor {
     pub fn new(
         port_name: &str,
         motor_infos: &HashMap<u8, MotorType>,
+        verbose: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
-        let motors = Motors::new(port_name, motor_infos)?;
+        let motors = Motors::new(port_name, motor_infos, verbose)?;
 
         // Get default KP/KD values for all motors.
         let target_params = motors
@@ -960,10 +974,9 @@ impl MotorsSupervisor {
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
 
-            // Clear the buffer at the start.
             let _ = motors.send_reset();
-            let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
             let _ = motors.send_start();
+            // let _ = motors.send_can_timeout(100); // If motor doesn't receive a command for 100ms, it will stop.
 
             while *running.lock().unwrap() {
                 // If paused, just wait 100ms without sending any commands.
@@ -1074,6 +1087,11 @@ impl MotorsSupervisor {
     }
 
     pub fn add_motor_to_zero(&self, motor_id: u8) {
+        // We need to set the motor parameters to zero to avoid the motor
+        // rapidly changing to the new target after it is zeroed.
+        self.set_torque(motor_id, 0.0);
+        self.set_position(motor_id, 0.0);
+        self.set_velocity(motor_id, 0.0);
         let mut motors_to_zero = self.motors_to_zero.lock().unwrap();
         motors_to_zero.insert(motor_id);
     }
