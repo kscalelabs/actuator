@@ -901,6 +901,8 @@ pub struct MotorsSupervisor {
     sleep_duration: Arc<Mutex<Duration>>,
     paused: Arc<Mutex<bool>>,
     restart: Arc<Mutex<bool>>,
+    total_commands: Arc<Mutex<u64>>,
+    failed_commands: Arc<Mutex<u64>>,
 }
 
 impl MotorsSupervisor {
@@ -954,6 +956,8 @@ impl MotorsSupervisor {
             sleep_duration: Arc::new(Mutex::new(Duration::from_micros(10))),
             paused,
             restart,
+            total_commands: Arc::new(Mutex::new(0)),
+            failed_commands: Arc::new(Mutex::new(0)),
         };
 
         controller.start_control_thread();
@@ -970,6 +974,8 @@ impl MotorsSupervisor {
         let sleep_duration = Arc::clone(&self.sleep_duration);
         let paused = Arc::clone(&self.paused);
         let restart = Arc::clone(&self.restart);
+        let total_commands = Arc::clone(&self.total_commands);
+        let failed_commands = Arc::clone(&self.failed_commands);
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
@@ -1003,7 +1009,9 @@ impl MotorsSupervisor {
                     let mut motor_ids_to_zero = motors_to_zero.lock().unwrap();
                     let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
                     if !motor_ids.is_empty() {
-                        let _ = motors.send_set_zero(Some(&motor_ids));
+                        if let Err(_) = motors.send_set_zero(Some(&motor_ids)) {
+                            *failed_commands.lock().unwrap() += 1;
+                        }
                         motor_ids_to_zero.clear();
                     }
                     let torque_commands = HashMap::from_iter(
@@ -1011,13 +1019,19 @@ impl MotorsSupervisor {
                             .iter()
                             .map(|id| (*id, MotorControlParams::default())),
                     );
-                    let _ = motors.send_motor_controls(&torque_commands);
+                    if let Err(_) = motors.send_motor_controls(&torque_commands) {
+                        *failed_commands.lock().unwrap() += 1;
+                    }
+                    *total_commands.lock().unwrap() += 1;
                 }
 
                 // Send PD commands to motors.
                 {
                     let target_params = target_params.lock().unwrap();
-                    let _ = motors.send_motor_controls(&target_params);
+                    if let Err(_) = motors.send_motor_controls(&target_params) {
+                        *failed_commands.lock().unwrap() += 1;
+                    }
+                    *total_commands.lock().unwrap() += 1;
                 }
 
                 {
@@ -1039,6 +1053,20 @@ impl MotorsSupervisor {
             let _ = motors.send_motor_controls(&zero_torque_sets);
             let _ = motors.send_reset();
         });
+    }
+
+    // New methods to access the command counters
+    pub fn get_total_commands(&self) -> u64 {
+        *self.total_commands.lock().unwrap()
+    }
+
+    pub fn get_failed_commands(&self) -> u64 {
+        *self.failed_commands.lock().unwrap()
+    }
+
+    pub fn reset_command_counters(&self) {
+        *self.total_commands.lock().unwrap() = 0;
+        *self.failed_commands.lock().unwrap() = 0;
     }
 
     pub fn set_params(&self, motor_id: u8, params: MotorControlParams) {
