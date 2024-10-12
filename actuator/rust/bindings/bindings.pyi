@@ -90,4 +90,13 @@ class PyRobstrideMotorsSupervisor:
     def set_params(self, motor_id:int, params:PyRobstrideMotorControlParams) -> None:
         ...
 
+    def get_total_commands(self) -> int:
+        ...
+
+    def get_failed_commands(self) -> int:
+        ...
+
+    def reset_command_counters(self) -> None:
+        ...
+
 
