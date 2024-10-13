@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let position: f32 = parts[1].parse()?;
-                controller.set_position(test_id, position);
+                let _ = controller.set_position(test_id, position);
                 println!("Set target position to {}", position);
             }
             "v" => {
@@ -95,7 +95,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let velocity: f32 = parts[1].parse()?;
-                controller.set_velocity(test_id, velocity);
+                let _ = controller.set_velocity(test_id, velocity);
+                println!("Set target velocity to {}", velocity);
             }
             "t" => {
                 if parts.len() != 2 {
@@ -103,7 +104,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let torque: f32 = parts[1].parse()?;
-                controller.set_torque(test_id, torque);
+                let _ = controller.set_torque(test_id, torque);
+                println!("Set target torque to {}", torque);
             }
             "kp" => {
                 if parts.len() != 2 {
@@ -111,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let kp: f32 = parts[1].parse()?;
-                controller.set_kp(test_id, kp);
+                let _ = controller.set_kp(test_id, kp);
                 println!("Set KP for motor {} to {}", test_id, kp);
             }
             "kd" => {
@@ -120,11 +122,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let kd: f32 = parts[1].parse()?;
-                controller.set_kd(test_id, kd);
+                let _ = controller.set_kd(test_id, kd);
                 println!("Set KD for motor {} to {}", test_id, kd);
             }
             "zero" | "z" => {
-                controller.add_motor_to_zero(test_id);
+                let _ = controller.add_motor_to_zero(test_id);
                 println!("Added motor {} to zero list", test_id);
             }
             "get_feedback" | "g" => {
