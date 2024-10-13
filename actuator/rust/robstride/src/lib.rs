@@ -259,18 +259,20 @@ fn unpack_ex_id(addr: [u8; 4]) -> ExId {
     }
 }
 
-fn tx_pack(
+fn tx_packs(
     port: &mut Box<dyn SerialPort>,
-    pack: &CanPack,
+    packs: &[CanPack],
     verbose: bool,
 ) -> Result<(), std::io::Error> {
     let mut buffer = Vec::new();
-    buffer.extend_from_slice(b"AT");
 
-    buffer.extend_from_slice(&pack_ex_id(&pack.ex_id));
-    buffer.push(pack.len);
-    buffer.extend_from_slice(&pack.data[..pack.len as usize]);
-    buffer.extend_from_slice(b"\r\n");
+    for pack in packs {
+        buffer.extend_from_slice(b"AT");
+        buffer.extend_from_slice(&pack_ex_id(&pack.ex_id));
+        buffer.push(pack.len);
+        buffer.extend_from_slice(&pack.data[..pack.len as usize]);
+        buffer.extend_from_slice(b"\r\n");
+    }
 
     if verbose {
         println!(
@@ -288,13 +290,24 @@ fn tx_pack(
     Ok(())
 }
 
-fn rx_unpack(port: &mut Box<dyn SerialPort>, verbose: bool) -> std::io::Result<CanPack> {
-    let mut buffer = [0u8; 17];
-    let bytes_read = port.read(&mut buffer)?;
+fn rx_unpacks(
+    port: &mut Box<dyn SerialPort>,
+    count: usize,
+    verbose: bool,
+) -> std::io::Result<Vec<CanPack>> {
+    let mut packs = Vec::new();
+    let mut buffer = Vec::new();
+
+    // Read until we have enough data for all expected packets
+    while buffer.len() < count * 17 {
+        let mut chunk = vec![0u8; 1024];
+        let bytes_read = port.read(&mut chunk)?;
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+    }
 
     if verbose {
         println!(
-            "RX: {} ",
+            "RX: {}",
             buffer
                 .iter()
                 .map(|b| format!("{:02X}", b))
@@ -303,21 +316,26 @@ fn rx_unpack(port: &mut Box<dyn SerialPort>, verbose: bool) -> std::io::Result<C
         );
     }
 
-    if bytes_read == 17 && buffer[0] == b'A' && buffer[1] == b'T' {
-        let ex_id = unpack_ex_id([buffer[2], buffer[3], buffer[4], buffer[5]]);
-        let len = buffer[6];
+    // Process the buffer in chunks of 17 bytes
+    for chunk in buffer.chunks(17) {
+        if chunk.len() == 17 && chunk[0] == b'A' && chunk[1] == b'T' {
+            let ex_id = unpack_ex_id([chunk[2], chunk[3], chunk[4], chunk[5]]);
+            let len = chunk[6];
 
-        Ok(CanPack {
-            ex_id,
-            len,
-            data: buffer[7..(7 + len as usize)].to_vec(),
-        })
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::UnexpectedEof,
-            "Failed to read CAN packet",
-        ))
+            packs.push(CanPack {
+                ex_id,
+                len,
+                data: chunk[7..(7 + len as usize)].to_vec(),
+            });
+        } else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Failed to read CAN packet",
+            ));
+        }
     }
+
+    Ok(packs)
 }
 
 fn unpack_raw_feedback(pack: &CanPack) -> MotorFeedbackRaw {
@@ -429,11 +447,29 @@ impl Motors {
     }
 
     fn send_command(&mut self, pack: &CanPack, sleep_after: bool) -> std::io::Result<CanPack> {
-        tx_pack(&mut self.port, pack, self.verbose)?;
+        tx_packs(&mut self.port, &[pack.clone()], self.verbose)?;
         if sleep_after {
             thread::sleep(self.sleep_time);
         }
-        rx_unpack(&mut self.port, self.verbose)
+        let packs = rx_unpacks(&mut self.port, 1, self.verbose)?;
+        packs.into_iter().next().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Failed to receive CAN packet",
+            )
+        })
+    }
+
+    fn send_commands(
+        &mut self,
+        packs: &[CanPack],
+        sleep_after: bool,
+    ) -> std::io::Result<Vec<CanPack>> {
+        tx_packs(&mut self.port, packs, self.verbose)?;
+        if sleep_after {
+            thread::sleep(self.sleep_time);
+        }
+        rx_unpacks(&mut self.port, packs.len(), self.verbose)
     }
 
     pub fn send_get_mode(&mut self) -> Result<HashMap<u8, RunMode>, std::io::Error> {
@@ -585,11 +621,11 @@ impl Motors {
 
         let index: u16 = index;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        tx_pack(&mut self.port, &pack, self.verbose)?;
+        tx_packs(&mut self.port, &[pack], self.verbose)?;
 
         let mut packs = Vec::new();
         for _ in 0..num_packs {
-            packs.push(rx_unpack(&mut self.port, self.verbose)?);
+            packs.push(rx_unpacks(&mut self.port, 1, self.verbose)?[0].clone());
         }
 
         let name = packs
@@ -615,9 +651,9 @@ impl Motors {
 
         let index: u16 = index;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        tx_pack(&mut self.port, &pack, self.verbose)?;
+        tx_packs(&mut self.port, &[pack], self.verbose)?;
 
-        let pack = rx_unpack(&mut self.port, self.verbose)?;
+        let pack = rx_unpacks(&mut self.port, 1, self.verbose)?[0].clone();
         let value = u16::from_le_bytes(pack.data[4..6].try_into().unwrap());
         Ok(value)
     }
