@@ -30,13 +30,13 @@ class PyRobstrideMotors:
     def send_get_mode(self) -> dict[int, str]:
         ...
 
-    def send_set_zero(self, motor_ids:typing.Optional[typing.Sequence[int]]) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_set_zero(self, motor_ids:typing.Optional[typing.Sequence[int]]) -> None:
         ...
 
-    def send_reset(self) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_resets(self) -> None:
         ...
 
-    def send_start(self) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_starts(self) -> None:
         ...
 
     def send_motor_controls(self, motor_controls:typing.Mapping[int, PyRobstrideMotorControlParams]) -> dict[int, PyRobstrideMotorFeedback]:
@@ -54,31 +54,31 @@ class PyRobstrideMotors:
 
 class PyRobstrideMotorsSupervisor:
     def __new__(cls,port_name,motor_infos,verbose = ...,min_update_rate = ...,target_update_rate = ...): ...
-    def set_position(self, motor_id:int, position:float) -> None:
+    def set_position(self, motor_id:int, position:float) -> float:
         ...
 
     def get_position(self, motor_id:int) -> float:
         ...
 
-    def set_velocity(self, motor_id:int, velocity:float) -> None:
+    def set_velocity(self, motor_id:int, velocity:float) -> float:
         ...
 
     def get_velocity(self, motor_id:int) -> float:
         ...
 
-    def set_kp(self, motor_id:int, kp:float) -> None:
+    def set_kp(self, motor_id:int, kp:float) -> float:
         ...
 
     def get_kp(self, motor_id:int) -> float:
         ...
 
-    def set_kd(self, motor_id:int, kd:float) -> None:
+    def set_kd(self, motor_id:int, kd:float) -> float:
         ...
 
     def get_kd(self, motor_id:int) -> float:
         ...
 
-    def set_torque(self, motor_id:int, torque:float) -> None:
+    def set_torque(self, motor_id:int, torque:float) -> float:
         ...
 
     def get_torque(self, motor_id:int) -> float:
@@ -102,10 +102,10 @@ class PyRobstrideMotorsSupervisor:
     def set_params(self, motor_id:int, params:PyRobstrideMotorControlParams) -> None:
         ...
 
-    def get_total_commands(self) -> int:
+    def get_total_commands(self, motor_id:int) -> int:
         ...
 
-    def get_failed_commands(self) -> int:
+    def get_failed_commands(self, motor_id:int) -> int:
         ...
 
     def reset_command_counters(self) -> None:
