@@ -46,19 +46,19 @@ impl PyRobstrideMotors {
 
     fn send_set_zero(&mut self, motor_ids: Option<Vec<u8>>) -> PyResult<()> {
         self.inner
-            .send_set_zero(motor_ids.as_deref())
+            .send_set_zeros(motor_ids.as_deref())
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn send_reset(&mut self) -> PyResult<()> {
+    fn send_resets(&mut self) -> PyResult<()> {
         self.inner
-            .send_reset()
+            .send_resets()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn send_start(&mut self) -> PyResult<()> {
+    fn send_starts(&mut self) -> PyResult<()> {
         self.inner
-            .send_start()
+            .send_starts()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
@@ -242,9 +242,10 @@ impl PyRobstrideMotorsSupervisor {
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
 
-    fn set_position(&self, motor_id: u8, position: f32) -> PyResult<()> {
-        self.inner.set_position(motor_id, position);
-        Ok(())
+    fn set_position(&self, motor_id: u8, position: f32) -> PyResult<f32> {
+        self.inner
+            .set_position(motor_id, position)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn get_position(&self, motor_id: u8) -> PyResult<f32> {
@@ -253,9 +254,10 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn set_velocity(&self, motor_id: u8, velocity: f32) -> PyResult<()> {
-        self.inner.set_velocity(motor_id, velocity);
-        Ok(())
+    fn set_velocity(&self, motor_id: u8, velocity: f32) -> PyResult<f32> {
+        self.inner
+            .set_velocity(motor_id, velocity)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn get_velocity(&self, motor_id: u8) -> PyResult<f32> {
@@ -264,9 +266,10 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn set_kp(&self, motor_id: u8, kp: f32) -> PyResult<()> {
-        self.inner.set_kp(motor_id, kp);
-        Ok(())
+    fn set_kp(&self, motor_id: u8, kp: f32) -> PyResult<f32> {
+        self.inner
+            .set_kp(motor_id, kp)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn get_kp(&self, motor_id: u8) -> PyResult<f32> {
@@ -275,9 +278,10 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn set_kd(&self, motor_id: u8, kd: f32) -> PyResult<()> {
-        self.inner.set_kd(motor_id, kd);
-        Ok(())
+    fn set_kd(&self, motor_id: u8, kd: f32) -> PyResult<f32> {
+        self.inner
+            .set_kd(motor_id, kd)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn get_kd(&self, motor_id: u8) -> PyResult<f32> {
@@ -286,9 +290,10 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn set_torque(&self, motor_id: u8, torque: f32) -> PyResult<()> {
-        self.inner.set_torque(motor_id, torque);
-        Ok(())
+    fn set_torque(&self, motor_id: u8, torque: f32) -> PyResult<f32> {
+        self.inner
+            .set_torque(motor_id, torque)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn get_torque(&self, motor_id: u8) -> PyResult<f32> {
@@ -298,8 +303,9 @@ impl PyRobstrideMotorsSupervisor {
     }
 
     fn add_motor_to_zero(&self, motor_id: u8) -> PyResult<()> {
-        self.inner.add_motor_to_zero(motor_id);
-        Ok(())
+        self.inner
+            .add_motor_to_zero(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn get_latest_feedback(&self) -> HashMap<u8, PyRobstrideMotorFeedback> {
@@ -342,12 +348,16 @@ impl PyRobstrideMotorsSupervisor {
         Ok(())
     }
 
-    fn get_total_commands(&self) -> PyResult<u64> {
-        Ok(self.inner.get_total_commands())
+    fn get_total_commands(&self, motor_id: u8) -> PyResult<u64> {
+        self.inner
+            .get_total_commands(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn get_failed_commands(&self) -> PyResult<u64> {
-        Ok(self.inner.get_failed_commands())
+    fn get_failed_commands(&self, motor_id: u8) -> PyResult<u64> {
+        self.inner
+            .get_failed_commands(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn reset_command_counters(&self) -> PyResult<()> {
