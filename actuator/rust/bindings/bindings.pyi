@@ -30,13 +30,13 @@ class PyRobstrideMotors:
     def send_get_mode(self) -> dict[int, str]:
         ...
 
-    def send_set_zero(self, motor_ids:typing.Optional[typing.Sequence[int]]) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_set_zero(self, motor_ids:typing.Optional[typing.Sequence[int]]) -> None:
         ...
 
-    def send_reset(self) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_reset(self) -> None:
         ...
 
-    def send_start(self) -> dict[int, PyRobstrideMotorFeedback]:
+    def send_start(self) -> None:
         ...
 
     def send_motor_controls(self, motor_controls:typing.Mapping[int, PyRobstrideMotorControlParams]) -> dict[int, PyRobstrideMotorFeedback]:
