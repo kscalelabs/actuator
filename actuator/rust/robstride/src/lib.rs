@@ -1,3 +1,4 @@
+use log::{error, info};
 use nix;
 use serialport::TTYPort;
 use std::collections::{HashMap, HashSet};
@@ -741,6 +742,12 @@ impl Motors {
 
     pub fn send_can_timeout(&mut self, timeout: f32) -> Result<(), std::io::Error> {
         for (&id, config) in self.motor_configs.clone().iter() {
+            let cur_timeout = self.read_uint16_param(id, config.can_timeout_command)?;
+            let new_timeout = (timeout * 20.0).round().clamp(0.0, 100000.0) as u32;
+            if cur_timeout as u32 == new_timeout {
+                continue;
+            }
+
             let mut pack = CanPack {
                 ex_id: ExId {
                     id,
@@ -756,10 +763,9 @@ impl Motors {
             pack.data[..2].copy_from_slice(&index.to_le_bytes());
             pack.data[2] = 0x04;
 
-            let timeout = (timeout * 20.0).round().clamp(0.0, 100000.0) as u32;
-            pack.data[4..8].copy_from_slice(&timeout.to_le_bytes());
+            pack.data[4..8].copy_from_slice(&new_timeout.to_le_bytes());
 
-            self.send_command(&pack, false)?;
+            self.send_command(&pack, true)?;
         }
 
         Ok(())
@@ -1007,7 +1013,7 @@ impl MotorsSupervisor {
             max_update_rate: Arc::new(RwLock::new(max_update_rate)),
             actual_update_rate: Arc::new(RwLock::new(0.0)),
             serial: Arc::new(RwLock::new(true)),
-            can_timeout: can_timeout,
+            can_timeout,
         };
 
         controller.start_control_thread();
@@ -1035,16 +1041,17 @@ impl MotorsSupervisor {
 
             // Runs pre-flight checks.
             if let Err(err) = motors.send_resets() {
-                eprintln!("Failed to send resets: {}", err);
+                error!("Failed to send resets: {}", err);
                 *running.write().unwrap() = false;
                 return;
             }
             if let Err(err) = motors.send_starts() {
-                eprintln!("Failed to send starts: {}", err);
+                error!("Failed to send starts: {}", err);
                 *running.write().unwrap() = false;
                 return;
             }
 
+            info!("Pre-flight checks completed successfully");
             let _ = motors.send_can_timeout(can_timeout);
             let _ = motors.send_set_mode(RunMode::MitMode);
 
