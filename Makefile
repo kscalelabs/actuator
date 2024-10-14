@@ -1,47 +1,14 @@
 # Makefile
 
-define HELP_MESSAGE
-actuator
-
-# Installing
-
-1. Create a new Conda environment: `conda create --name actuator python=3.11`
-2. Activate the environment: `conda activate actuator`
-3. Install the package: `make install-dev`
-
-# Running Tests
-
-1. Run autoformatting: `make format`
-2. Run static checks: `make static-checks`
-3. Run unit tests: `make test`
-
-endef
-export HELP_MESSAGE
-
-all:
-	@echo "$$HELP_MESSAGE"
-.PHONY: all
-
 # ------------------------ #
 #          Build           #
 # ------------------------ #
 
-install-and-run:
+install:
+	cargo run --bin stub_gen
+	@touch setup.py
 	@uv pip install -e '.[dev]'
-	@python -m actuator.cli
-.PHONY: install-and-run
-
-build-rust:
-	@RUST_BACKTRACE=1 cargo build -p lib
-.PHONY: build-rust
-
-build-stubs:
-	@RUST_BACKTRACE=1 cargo run --bin stub_gen -p lib --verbose
-.PHONY: build-stubs
-
-clean:
-	rm -rf build dist *.so **/*.so **/*.pyi **/*.pyc **/*.pyd **/*.pyo **/__pycache__ *.egg-info .eggs/ .ruff_cache/
-.PHONY: clean
+.PHONY: build
 
 # ------------------------ #
 #       Static Checks      #

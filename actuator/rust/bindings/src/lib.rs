@@ -65,6 +65,7 @@ impl PyRobstrideMotors {
     fn send_motor_controls(
         &mut self,
         motor_controls: HashMap<u8, PyRobstrideMotorControlParams>,
+        serial: bool,
     ) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
         let motor_controls: HashMap<u8, RobstrideMotorControlParams> = motor_controls
             .into_iter()
@@ -72,31 +73,15 @@ impl PyRobstrideMotors {
             .collect();
 
         self.inner
-            .send_motor_controls(&motor_controls)
+            .send_motor_controls(&motor_controls, serial)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
             .into_iter()
             .map(|(k, v)| Ok((k, v.into())))
             .collect()
     }
 
-    fn get_latest_feedback(&self) -> HashMap<u8, PyRobstrideMotorFeedback> {
-        self.inner
-            .get_latest_feedback()
-            .into_iter()
-            .map(|(k, v)| (k, v.into()))
-            .collect()
-    }
-
-    fn get_latest_feedback_for(&self, motor_id: u8) -> PyResult<PyRobstrideMotorFeedback> {
-        self.inner
-            .get_latest_feedback_for(motor_id)
-            .map(|feedback| feedback.clone().into())
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
     fn __repr__(&self) -> PyResult<String> {
-        let motor_count = self.inner.get_latest_feedback().len();
-        Ok(format!("PyRobstrideMotors(motor_count={})", motor_count))
+        Ok(format!("PyRobstrideMotors"))
     }
 }
 
@@ -214,12 +199,11 @@ struct PyRobstrideMotorsSupervisor {
 #[pymethods]
 impl PyRobstrideMotorsSupervisor {
     #[new]
-    #[pyo3(signature = (port_name, motor_infos, verbose = false, min_update_rate = 10.0, target_update_rate = 50.0))]
+    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0))]
     fn new(
         port_name: String,
         motor_infos: HashMap<u8, String>,
         verbose: bool,
-        min_update_rate: f64,
         target_update_rate: f64,
     ) -> PyResult<Self> {
         let motor_infos = motor_infos
@@ -230,14 +214,9 @@ impl PyRobstrideMotorsSupervisor {
             })
             .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
-        let controller = RobstrideMotorsSupervisor::new(
-            &port_name,
-            &motor_infos,
-            verbose,
-            min_update_rate,
-            target_update_rate,
-        )
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        let controller =
+            RobstrideMotorsSupervisor::new(&port_name, &motor_infos, verbose, target_update_rate)
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
@@ -348,13 +327,12 @@ impl PyRobstrideMotorsSupervisor {
         Ok(())
     }
 
-    fn get_total_commands(&self, motor_id: u8) -> PyResult<u64> {
-        self.inner
-            .get_total_commands(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    #[getter]
+    fn total_commands(&self) -> PyResult<u64> {
+        Ok(self.inner.get_total_commands())
     }
 
-    fn get_failed_commands(&self, motor_id: u8) -> PyResult<u64> {
+    fn failed_commands_for(&self, motor_id: u8) -> PyResult<u64> {
         self.inner
             .get_failed_commands(motor_id)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
@@ -365,18 +343,24 @@ impl PyRobstrideMotorsSupervisor {
         Ok(())
     }
 
-    fn set_min_update_rate(&self, rate: f64) -> PyResult<()> {
-        self.inner.set_min_update_rate(rate);
+    #[setter]
+    fn max_update_rate(&self, rate: f64) -> PyResult<()> {
+        self.inner.set_max_update_rate(rate);
         Ok(())
     }
 
-    fn set_target_update_rate(&self, rate: f64) -> PyResult<()> {
-        self.inner.set_target_update_rate(rate);
-        Ok(())
-    }
-
-    fn get_actual_update_rate(&self) -> PyResult<f64> {
+    #[getter]
+    fn actual_update_rate(&self) -> PyResult<f64> {
         Ok(self.inner.get_actual_update_rate())
+    }
+
+    fn toggle_serial(&self) -> PyResult<bool> {
+        Ok(self.inner.toggle_serial())
+    }
+
+    #[getter]
+    fn serial(&self) -> PyResult<bool> {
+        Ok(self.inner.get_serial())
     }
 }
 

@@ -1,17 +1,44 @@
 use clap::Parser;
 use robstride::{motor_type_from_str, MotorType, MotorsSupervisor};
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::io::{self, Write};
+use std::time::{Duration, Instant};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(short, long, help = "Enable verbose output")]
     verbose: bool,
-    #[arg(short, long, help = "Minimum update rate (Hz)", default_value_t = 10.0)]
+    #[arg(long, help = "Minimum update rate (Hz)", default_value_t = 10.0)]
     min_update_rate: f64,
-    #[arg(short, long, help = "Target update rate (Hz)", default_value_t = 50.0)]
-    target_update_rate: f64,
+    #[arg(long, help = "Maximum update rate (Hz)", default_value_t = 1000.0)]
+    max_update_rate: f64,
+}
+
+fn sinusoid(
+    controller: &MotorsSupervisor,
+    id: u8,
+    amplitude: f32,
+    duration: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let start = Instant::now();
+
+    controller.set_kd(id, 1.0)?;
+    controller.set_kp(id, 10.0)?;
+    controller.set_velocity(id, 0.0)?;
+    controller.set_torque(id, 0.0)?;
+
+    while start.elapsed() < duration {
+        let t = start.elapsed().as_secs_f32();
+        let pos = amplitude * (2.0 * PI * t).sin();
+        controller.set_position(id, pos)?;
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    controller.set_position(id, 0.0)?;
+
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,13 +73,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let motor_type = motor_type_from_str(motor_type_input.as_str())?;
     let motor_infos: HashMap<u8, MotorType> = HashMap::from([(test_id, motor_type)]);
-    let controller = MotorsSupervisor::new(
-        &port_name,
-        &motor_infos,
-        args.verbose,
-        args.min_update_rate,
-        args.target_update_rate,
-    )?;
+    let controller =
+        MotorsSupervisor::new(&port_name, &motor_infos, args.verbose, args.max_update_rate)?;
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");
@@ -61,6 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  t <torque>");
     println!("  kp <kp>");
     println!("  kd <kd>");
+    println!("  sinusoid / s");
     println!("  zero / z");
     println!("  get_feedback / g");
     println!("  pause / w");
@@ -124,6 +147,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let kd: f32 = parts[1].parse()?;
                 let _ = controller.set_kd(test_id, kd);
                 println!("Set KD for motor {} to {}", test_id, kd);
+            }
+            "sinusoid" | "s" => {
+                let _ = sinusoid(&controller, test_id, 1.0, Duration::from_secs(1));
+                println!("Ran motor {} sinusoid test", test_id);
             }
             "zero" | "z" => {
                 let _ = controller.add_motor_to_zero(test_id);
