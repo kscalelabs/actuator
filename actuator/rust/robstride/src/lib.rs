@@ -960,6 +960,7 @@ pub struct MotorsSupervisor {
     max_update_rate: Arc<RwLock<f64>>,
     actual_update_rate: Arc<RwLock<f64>>,
     serial: Arc<RwLock<bool>>,
+    can_timeout: f32,
 }
 
 impl MotorsSupervisor {
@@ -968,6 +969,7 @@ impl MotorsSupervisor {
         motor_infos: &HashMap<u8, MotorType>,
         verbose: bool,
         max_update_rate: f64,
+        can_timeout: f32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos, verbose)?;
@@ -1015,6 +1017,7 @@ impl MotorsSupervisor {
             max_update_rate: Arc::new(RwLock::new(max_update_rate)),
             actual_update_rate: Arc::new(RwLock::new(0.0)),
             serial: Arc::new(RwLock::new(true)),
+            can_timeout: can_timeout,
         };
 
         controller.start_control_thread();
@@ -1035,6 +1038,7 @@ impl MotorsSupervisor {
         let max_update_rate = Arc::clone(&self.max_update_rate);
         let actual_update_rate = Arc::clone(&self.actual_update_rate);
         let serial = Arc::clone(&self.serial);
+        let can_timeout = self.can_timeout;
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
@@ -1044,7 +1048,7 @@ impl MotorsSupervisor {
                 *running.write().unwrap() = false;
                 return;
             }
-            if let Err(_) = motors.send_can_timeout(200.0) {
+            if let Err(_) = motors.send_can_timeout(can_timeout) {
                 *running.write().unwrap() = false;
                 return;
             }
