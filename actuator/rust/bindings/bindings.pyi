@@ -39,13 +39,7 @@ class PyRobstrideMotors:
     def send_starts(self) -> None:
         ...
 
-    def send_motor_controls(self, motor_controls:typing.Mapping[int, PyRobstrideMotorControlParams]) -> dict[int, PyRobstrideMotorFeedback]:
-        ...
-
-    def get_latest_feedback(self) -> dict[int, PyRobstrideMotorFeedback]:
-        ...
-
-    def get_latest_feedback_for(self, motor_id:int) -> PyRobstrideMotorFeedback:
+    def send_motor_controls(self, motor_controls:typing.Mapping[int, PyRobstrideMotorControlParams], serial:bool) -> dict[int, PyRobstrideMotorFeedback]:
         ...
 
     def __repr__(self) -> str:
@@ -53,6 +47,9 @@ class PyRobstrideMotors:
 
 
 class PyRobstrideMotorsSupervisor:
+    total_commands: int
+    actual_update_rate: float
+    serial: bool
     def __new__(cls,port_name,motor_infos,verbose = ...,min_update_rate = ...,target_update_rate = ...): ...
     def set_position(self, motor_id:int, position:float) -> float:
         ...
@@ -102,22 +99,19 @@ class PyRobstrideMotorsSupervisor:
     def set_params(self, motor_id:int, params:PyRobstrideMotorControlParams) -> None:
         ...
 
-    def get_total_commands(self, motor_id:int) -> int:
-        ...
-
-    def get_failed_commands(self, motor_id:int) -> int:
+    def failed_commands_for(self, motor_id:int) -> int:
         ...
 
     def reset_command_counters(self) -> None:
         ...
 
-    def set_min_update_rate(self, rate:float) -> None:
+    def min_update_rate(self, rate:float) -> None:
         ...
 
-    def set_target_update_rate(self, rate:float) -> None:
+    def max_update_rate(self, rate:float) -> None:
         ...
 
-    def get_actual_update_rate(self) -> float:
+    def toggle_serial(self) -> bool:
         ...
 
 
