@@ -19,3 +19,4 @@ lazy_static = "1.4.0"
 spin_sleep = "1.2.1"
 nix = "0.26.2"
 clap = { version = "4.3", features = ["derive"] }
+log = "0.4.22"

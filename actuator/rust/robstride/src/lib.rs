@@ -1,3 +1,4 @@
+use log::{error, info};
 use nix;
 use serialport::TTYPort;
 use std::collections::{HashMap, HashSet};
@@ -289,10 +290,6 @@ fn tx_packs(port: &mut TTYPort, packs: &[CanPack], verbose: bool) -> Result<(), 
     port.write_all(&buffer)?;
     port.flush()?;
 
-    // let fd = port.as_raw_fd();
-    // nix::unistd::write(fd, &buffer)?;
-    // nix::unistd::fsync(fd)?;
-
     Ok(())
 }
 
@@ -304,7 +301,7 @@ fn rx_unpack(port: &mut TTYPort, len: usize, verbose: bool) -> std::io::Result<V
             Ok(_) => (),
             Err(e)
                 if e.kind() == std::io::ErrorKind::TimedOut
-                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+                    || e.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
                 break;
             }
@@ -423,7 +420,6 @@ pub struct Motors {
     motor_configs: HashMap<u8, &'static MotorConfig>,
     mode: RunMode,
     sleep_time: Duration,
-    short_sleep_time: Duration,
     verbose: bool,
 }
 
@@ -433,6 +429,13 @@ impl Motors {
         motor_infos: &HashMap<u8, MotorType>,
         verbose: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        if motor_infos.is_empty() {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "No motors to initialize",
+            )));
+        }
+
         let port = init_serial_port(port_name)?;
         let motor_configs: HashMap<u8, &'static MotorConfig> = motor_infos
             .clone()
@@ -448,8 +451,7 @@ impl Motors {
             port,
             motor_configs,
             mode: RunMode::UnsetMode,
-            sleep_time: Duration::from_millis(50),
-            short_sleep_time: Duration::from_millis(1),
+            sleep_time: Duration::from_millis(10),
             verbose,
         })
     }
@@ -458,8 +460,6 @@ impl Motors {
         tx_packs(&mut self.port, &[pack.clone()], self.verbose)?;
         if sleep_after {
             thread::sleep(self.sleep_time);
-        } else {
-            thread::sleep(self.short_sleep_time);
         }
         let packs = rx_unpack(&mut self.port, 1, self.verbose)?;
         if packs.is_empty() {
@@ -481,6 +481,7 @@ impl Motors {
         &mut self,
         packs: &[CanPack],
         sleep_after: bool,
+        serial: bool,
     ) -> std::io::Result<Vec<CanPack>> {
         if packs.is_empty() {
             return Err(std::io::Error::new(
@@ -488,13 +489,19 @@ impl Motors {
                 "No commands to send!",
             ));
         }
-        tx_packs(&mut self.port, packs, self.verbose)?;
-        if sleep_after {
-            thread::sleep(self.sleep_time);
+        if serial {
+            let mut results = Vec::new();
+            for pack in packs {
+                results.push(self.send_command(pack, sleep_after)?);
+            }
+            Ok(results)
         } else {
-            thread::sleep(self.short_sleep_time);
+            tx_packs(&mut self.port, packs, self.verbose)?;
+            if sleep_after {
+                thread::sleep(self.sleep_time);
+            }
+            rx_unpack(&mut self.port, packs.len(), self.verbose)
         }
-        rx_unpack(&mut self.port, packs.len(), self.verbose)
     }
 
     pub fn send_get_mode(&mut self) -> Result<HashMap<u8, RunMode>, std::io::Error> {
@@ -735,6 +742,12 @@ impl Motors {
 
     pub fn send_can_timeout(&mut self, timeout: f32) -> Result<(), std::io::Error> {
         for (&id, config) in self.motor_configs.clone().iter() {
+            let cur_timeout = self.read_uint16_param(id, config.can_timeout_command)?;
+            let new_timeout = (timeout * 20.0).round().clamp(0.0, 100000.0) as u32;
+            if cur_timeout as u32 == new_timeout {
+                continue;
+            }
+
             let mut pack = CanPack {
                 ex_id: ExId {
                     id,
@@ -750,8 +763,7 @@ impl Motors {
             pack.data[..2].copy_from_slice(&index.to_le_bytes());
             pack.data[2] = 0x04;
 
-            let timeout = (timeout * 20.0).round().clamp(0.0, 100000.0) as u32;
-            pack.data[4..8].copy_from_slice(&timeout.to_le_bytes());
+            pack.data[4..8].copy_from_slice(&new_timeout.to_le_bytes());
 
             self.send_command(&pack, true)?;
         }
@@ -775,9 +787,22 @@ impl Motors {
     }
 
     pub fn send_resets(&mut self) -> Result<(), std::io::Error> {
-        for id in self.motor_configs.keys().cloned().collect::<Vec<u8>>() {
-            self.send_reset(id)?;
-        }
+        let motor_ids: Vec<u8> = self.motor_configs.keys().cloned().collect();
+        let packs: Vec<CanPack> = motor_ids
+            .iter()
+            .map(|&id| CanPack {
+                ex_id: ExId {
+                    id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::MotorReset,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+            })
+            .collect();
+
+        self.send_commands(&packs, true, true)?;
         Ok(())
     }
 
@@ -797,9 +822,22 @@ impl Motors {
     }
 
     pub fn send_starts(&mut self) -> Result<(), std::io::Error> {
-        for id in self.motor_configs.keys().cloned().collect::<Vec<u8>>() {
-            self.send_start(id)?;
-        }
+        let motor_ids: Vec<u8> = self.motor_configs.keys().cloned().collect();
+        let packs: Vec<CanPack> = motor_ids
+            .iter()
+            .map(|&id| CanPack {
+                ex_id: ExId {
+                    id,
+                    data: CAN_ID_DEBUG_UI as u16,
+                    mode: CanComMode::MotorIn,
+                    res: 0,
+                },
+                len: 8,
+                data: vec![0; 8],
+            })
+            .collect();
+
+        self.send_commands(&packs, true, true)?;
         Ok(())
     }
 
@@ -842,68 +880,42 @@ impl Motors {
         }
     }
 
-    fn send_motor_control(
-        &mut self,
-        motor_id: u8,
-        params: &MotorControlParams,
-    ) -> Result<MotorFeedback, std::io::Error> {
-        if !self.motor_configs.contains_key(&motor_id) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("Invalid motor ID: {}", motor_id),
-            ));
-        }
-
-        self.send_set_mode(RunMode::MitMode)?;
-        let pack = self.pack_motor_params(motor_id, params)?;
-        let response_pack = self.send_command(&pack, false)?;
-        self.unpack_feedback(&response_pack)
-    }
-
     pub fn send_motor_controls(
         &mut self,
         params_map: &HashMap<u8, MotorControlParams>,
         serial: bool,
     ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
-        if serial {
-            let mut feedbacks = HashMap::new();
-            for (&motor_id, params) in params_map {
-                match self.send_motor_control(motor_id, params) {
-                    Ok(feedback) => {
-                        feedbacks.insert(motor_id, feedback);
-                    }
-                    Err(_) => {}
-                }
-            }
-            Ok(feedbacks)
-        } else {
-            let packs = params_map
-                .iter()
-                .map(|(id, params)| self.pack_motor_params(*id, params))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("Failed to pack motor parameters: {}", e),
-                    )
-                })?;
-            let responses = self.send_commands(&packs, false)?;
-            let feedbacks: HashMap<u8, MotorFeedback> = responses
-                .iter()
-                .map(|pack| {
-                    self.unpack_feedback(pack)
-                        .map(|feedback| (feedback.can_id, feedback))
-                })
-                .collect::<Result<HashMap<_, _>, _>>()
-                .map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Failed to unpack feedback: {}", e),
-                    )
-                })?;
+        self.send_set_mode(RunMode::MitMode)?;
 
-            Ok(feedbacks)
+        let packs: Vec<CanPack> = params_map
+            .iter()
+            .filter_map(|(&id, params)| self.pack_motor_params(id, params).ok())
+            .collect();
+
+        if packs.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "No motor control parameters provided",
+            ));
         }
+
+        let response_packs = if serial {
+            packs
+                .into_iter()
+                .map(|pack| self.send_command(&pack, false))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            self.send_commands(&packs, false, false)?
+        };
+
+        Ok(response_packs
+            .into_iter()
+            .filter_map(|pack| {
+                self.unpack_feedback(&pack)
+                    .map(|feedback| (feedback.can_id, feedback))
+                    .ok()
+            })
+            .collect::<HashMap<u8, MotorFeedback>>())
     }
 
     fn unpack_feedback(&mut self, pack: &CanPack) -> Result<MotorFeedback, std::io::Error> {
@@ -944,6 +956,7 @@ pub struct MotorsSupervisor {
     max_update_rate: Arc<RwLock<f64>>,
     actual_update_rate: Arc<RwLock<f64>>,
     serial: Arc<RwLock<bool>>,
+    can_timeout: f32,
 }
 
 impl MotorsSupervisor {
@@ -952,6 +965,7 @@ impl MotorsSupervisor {
         motor_infos: &HashMap<u8, MotorType>,
         verbose: bool,
         max_update_rate: f64,
+        can_timeout: f32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos, verbose)?;
@@ -998,7 +1012,8 @@ impl MotorsSupervisor {
             failed_commands: Arc::new(RwLock::new(failed_commands)),
             max_update_rate: Arc::new(RwLock::new(max_update_rate)),
             actual_update_rate: Arc::new(RwLock::new(0.0)),
-            serial: Arc::new(RwLock::new(false)),
+            serial: Arc::new(RwLock::new(true)),
+            can_timeout,
         };
 
         controller.start_control_thread();
@@ -1019,14 +1034,26 @@ impl MotorsSupervisor {
         let max_update_rate = Arc::clone(&self.max_update_rate);
         let actual_update_rate = Arc::clone(&self.actual_update_rate);
         let serial = Arc::clone(&self.serial);
+        let can_timeout = self.can_timeout;
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
 
-            let _ = motors.send_resets();
-            let _ = motors.send_starts();
+            // Runs pre-flight checks.
+            if let Err(err) = motors.send_resets() {
+                error!("Failed to send resets: {}", err);
+                *running.write().unwrap() = false;
+                return;
+            }
+            if let Err(err) = motors.send_starts() {
+                error!("Failed to send starts: {}", err);
+                *running.write().unwrap() = false;
+                return;
+            }
 
-            let _ = motors.send_can_timeout(100.0);
+            info!("Pre-flight checks completed successfully");
+            let _ = motors.send_can_timeout(can_timeout);
+            let _ = motors.send_set_mode(RunMode::MitMode);
 
             let mut last_update_time = std::time::Instant::now();
 
@@ -1078,19 +1105,20 @@ impl MotorsSupervisor {
                     // Send PD commands to motors.
                     let target_params = target_params.read().unwrap();
                     if !target_params.is_empty() {
-                        if let Ok(feedbacks) =
-                            motors.send_motor_controls(&target_params, *serial.read().unwrap())
-                        {
-                            let mut latest_feedback = latest_feedback.write().unwrap();
-                            let mut failed_commands = failed_commands.write().unwrap();
-                            for &motor_id in target_params.keys() {
-                                if let Some(feedback) = feedbacks.get(&motor_id) {
-                                    latest_feedback.insert(motor_id, feedback.clone());
-                                } else {
-                                    failed_commands.entry(motor_id).and_modify(|e| *e += 1);
+                        match motors.send_motor_controls(&target_params, *serial.read().unwrap()) {
+                            Ok(feedbacks) => {
+                                let mut latest_feedback = latest_feedback.write().unwrap();
+                                let mut failed_commands = failed_commands.write().unwrap();
+                                for &motor_id in target_params.keys() {
+                                    if let Some(feedback) = feedbacks.get(&motor_id) {
+                                        latest_feedback.insert(motor_id, feedback.clone());
+                                    } else {
+                                        failed_commands.entry(motor_id).and_modify(|e| *e += 1);
+                                    }
                                 }
+                                *total_commands.write().unwrap() += 1;
                             }
-                            *total_commands.write().unwrap() += 1;
+                            Err(_) => {}
                         }
                     }
                 }
@@ -1102,7 +1130,7 @@ impl MotorsSupervisor {
                     let current_rate = 1.0 / elapsed.as_secs_f64();
                     let prev_actual_update_rate = *actual_update_rate.read().unwrap();
                     *actual_update_rate.write().unwrap() =
-                        prev_actual_update_rate * 0.99 + current_rate * 0.01;
+                        prev_actual_update_rate * 0.9 + current_rate * 0.1;
                 }
 
                 {
@@ -1321,6 +1349,10 @@ impl MotorsSupervisor {
             *running = false;
         }
         thread::sleep(Duration::from_millis(200));
+    }
+
+    pub fn is_running(&self) -> bool {
+        *self.running.read().unwrap()
     }
 
     pub fn set_max_update_rate(&self, rate: f64) {

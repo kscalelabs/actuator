@@ -199,12 +199,13 @@ struct PyRobstrideMotorsSupervisor {
 #[pymethods]
 impl PyRobstrideMotorsSupervisor {
     #[new]
-    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0))]
+    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0, can_timeout = 200.0))]
     fn new(
         port_name: String,
         motor_infos: HashMap<u8, String>,
         verbose: bool,
         target_update_rate: f64,
+        can_timeout: f32,
     ) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
@@ -214,9 +215,14 @@ impl PyRobstrideMotorsSupervisor {
             })
             .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
-        let controller =
-            RobstrideMotorsSupervisor::new(&port_name, &motor_infos, verbose, target_update_rate)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        let controller = RobstrideMotorsSupervisor::new(
+            &port_name,
+            &motor_infos,
+            verbose,
+            target_update_rate,
+            can_timeout,
+        )
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
@@ -341,6 +347,10 @@ impl PyRobstrideMotorsSupervisor {
     fn reset_command_counters(&self) -> PyResult<()> {
         self.inner.reset_command_counters();
         Ok(())
+    }
+
+    fn is_running(&self) -> PyResult<bool> {
+        Ok(self.inner.is_running())
     }
 
     #[setter]
