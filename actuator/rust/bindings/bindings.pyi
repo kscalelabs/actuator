@@ -105,6 +105,9 @@ class PyRobstrideMotorsSupervisor:
     def reset_command_counters(self) -> None:
         ...
 
+    def is_running(self) -> bool:
+        ...
+
     def max_update_rate(self, rate:float) -> None:
         ...
 

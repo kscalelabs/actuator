@@ -349,6 +349,10 @@ impl PyRobstrideMotorsSupervisor {
         Ok(())
     }
 
+    fn is_running(&self) -> PyResult<bool> {
+        Ok(self.inner.is_running())
+    }
+
     #[setter]
     fn max_update_rate(&self, rate: f64) -> PyResult<()> {
         self.inner.set_max_update_rate(rate);

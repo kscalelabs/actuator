@@ -796,8 +796,6 @@ impl Motors {
             })
             .collect();
 
-        println!("Motor IDs: {:?}", motor_ids);
-
         self.send_commands(&packs, true, true)?;
         Ok(())
     }
@@ -883,14 +881,10 @@ impl Motors {
     ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
         self.send_set_mode(RunMode::MitMode)?;
 
-        println!("A");
-
         let packs: Vec<CanPack> = params_map
             .iter()
             .filter_map(|(&id, params)| self.pack_motor_params(id, params).ok())
             .collect();
-
-        println!("B");
 
         if packs.is_empty() {
             return Err(std::io::Error::new(
@@ -898,8 +892,6 @@ impl Motors {
                 "No motor control parameters provided",
             ));
         }
-
-        println!("C");
 
         let response_packs = if serial {
             packs
@@ -909,8 +901,6 @@ impl Motors {
         } else {
             self.send_commands(&packs, false, false)?
         };
-
-        println!("D");
 
         Ok(response_packs
             .into_iter()
@@ -1044,22 +1034,19 @@ impl MotorsSupervisor {
             let mut motors = motors.lock().unwrap();
 
             // Runs pre-flight checks.
-            if let Err(_) = motors.send_resets() {
+            if let Err(err) = motors.send_resets() {
+                eprintln!("Failed to send resets: {}", err);
                 *running.write().unwrap() = false;
                 return;
             }
-            if let Err(_) = motors.send_can_timeout(can_timeout) {
+            if let Err(err) = motors.send_starts() {
+                eprintln!("Failed to send starts: {}", err);
                 *running.write().unwrap() = false;
                 return;
             }
-            if let Err(_) = motors.send_starts() {
-                *running.write().unwrap() = false;
-                return;
-            }
-            if let Err(_) = motors.send_set_mode(RunMode::MitMode) {
-                *running.write().unwrap() = false;
-                return;
-            }
+
+            let _ = motors.send_can_timeout(can_timeout);
+            let _ = motors.send_set_mode(RunMode::MitMode);
 
             let mut last_update_time = std::time::Instant::now();
 
@@ -1124,9 +1111,7 @@ impl MotorsSupervisor {
                                 }
                                 *total_commands.write().unwrap() += 1;
                             }
-                            Err(e) => {
-                                println!("Error sending motor controls: {}", e);
-                            }
+                            Err(_) => {}
                         }
                     }
                 }
