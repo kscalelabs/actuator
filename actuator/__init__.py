@@ -1,6 +1,6 @@
 """Defines the top-level API for the actuator package."""
 
-__version__ = "0.0.16"
+__version__ = "0.0.17"
 
 from .rust.bindings import (
     PyRobstrideMotorControlParams as RobstrideMotorControlParams,
