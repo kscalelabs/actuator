@@ -64,6 +64,3 @@ KERNEL=="ttyUSB[0-9]", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", RUN+="
 ## Supported Actuators
 
 - [Robstride](https://robstride.com/)
-
-ATTRS{idVendor}=="1a86"
-ATTRS{idProduct}=="7523"
