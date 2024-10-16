@@ -1,8 +1,51 @@
+use clap::Parser;
 use robstride::{motor_type_from_str, MotorType, MotorsSupervisor};
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::io::{self, Write};
+use std::time::{Duration, Instant};
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, help = "Enable verbose output")]
+    verbose: bool,
+    #[arg(long, help = "Minimum update rate (Hz)", default_value_t = 10.0)]
+    min_update_rate: f64,
+    #[arg(long, help = "Maximum update rate (Hz)", default_value_t = 1000.0)]
+    max_update_rate: f64,
+    #[arg(long, help = "CAN timeout (ms)", default_value_t = 200.0)]
+    can_timeout: f32,
+}
+
+fn sinusoid(
+    controller: &MotorsSupervisor,
+    id: u8,
+    amplitude: f32,
+    duration: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let start = Instant::now();
+
+    controller.set_kd(id, 1.0)?;
+    controller.set_kp(id, 10.0)?;
+    controller.set_velocity(id, 0.0)?;
+    controller.set_torque(id, 0.0)?;
+
+    while start.elapsed() < duration {
+        let t = start.elapsed().as_secs_f32();
+        let pos = amplitude * (2.0 * PI * t).sin();
+        controller.set_position(id, pos)?;
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    controller.set_position(id, 0.0)?;
+
+    Ok(())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
     print!("Enter the TEST_ID (u8): ");
     io::stdout().flush()?;
     let mut input = String::new();
@@ -32,14 +75,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let motor_type = motor_type_from_str(motor_type_input.as_str())?;
     let motor_infos: HashMap<u8, MotorType> = HashMap::from([(test_id, motor_type)]);
-    let controller = MotorsSupervisor::new(&port_name, &motor_infos)?;
+    let controller = MotorsSupervisor::new(
+        &port_name,
+        &motor_infos,
+        args.verbose,
+        args.max_update_rate,
+        args.can_timeout,
+    )?;
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");
-    println!("  set_position / s <position>");
-    println!("  set_kp_kd / k <kp> <kd>");
+    println!("  p <position>");
+    println!("  v <velocity>");
+    println!("  t <torque>");
+    println!("  kp <kp>");
+    println!("  kd <kd>");
+    println!("  sinusoid / s");
     println!("  zero / z");
     println!("  get_feedback / g");
+    println!("  pause / w");
+    println!("  reset / r");
     println!("  quit / q");
 
     loop {
@@ -55,27 +110,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         match parts[0] {
-            "set_position" | "s" => {
+            "p" => {
                 if parts.len() != 2 {
-                    println!("Usage: set_position <position>");
+                    println!("Usage: p <position>");
                     continue;
                 }
                 let position: f32 = parts[1].parse()?;
-                controller.set_target_position(test_id, position);
+                let _ = controller.set_position(test_id, position);
                 println!("Set target position to {}", position);
             }
-            "set_kp_kd" | "k" => {
-                if parts.len() != 3 {
-                    println!("Usage: set_kp_kd <kp> <kd>");
+            "v" => {
+                if parts.len() != 2 {
+                    println!("Usage: v <velocity>");
+                    continue;
+                }
+                let velocity: f32 = parts[1].parse()?;
+                let _ = controller.set_velocity(test_id, velocity);
+                println!("Set target velocity to {}", velocity);
+            }
+            "t" => {
+                if parts.len() != 2 {
+                    println!("Usage: t <torque>");
+                    continue;
+                }
+                let torque: f32 = parts[1].parse()?;
+                let _ = controller.set_torque(test_id, torque);
+                println!("Set target torque to {}", torque);
+            }
+            "kp" => {
+                if parts.len() != 2 {
+                    println!("Usage: kp <kp>");
                     continue;
                 }
                 let kp: f32 = parts[1].parse()?;
-                let kd: f32 = parts[2].parse()?;
-                controller.set_kp_kd(test_id, kp, kd);
-                println!("Set KP/KD for motor {} to {}/{}", test_id, kp, kd);
+                let _ = controller.set_kp(test_id, kp);
+                println!("Set KP for motor {} to {}", test_id, kp);
+            }
+            "kd" => {
+                if parts.len() != 2 {
+                    println!("Usage: kd <kd>");
+                    continue;
+                }
+                let kd: f32 = parts[1].parse()?;
+                let _ = controller.set_kd(test_id, kd);
+                println!("Set KD for motor {} to {}", test_id, kd);
+            }
+            "sinusoid" | "s" => {
+                let _ = sinusoid(&controller, test_id, 1.0, Duration::from_secs(1));
+                println!("Ran motor {} sinusoid test", test_id);
             }
             "zero" | "z" => {
-                controller.add_motor_to_zero(test_id);
+                let _ = controller.add_motor_to_zero(test_id);
                 println!("Added motor {} to zero list", test_id);
             }
             "get_feedback" | "g" => {
@@ -84,13 +169,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Motor {}: {:?}", id, fb);
                 }
             }
+            "pause" | "w" => {
+                controller.toggle_pause();
+                println!("Toggled pause state");
+            }
+            "reset" | "r" => {
+                controller.reset();
+                println!("Reset motors");
+            }
             "quit" | "q" => {
                 controller.stop();
                 println!("Exiting...");
                 break;
             }
             _ => {
-                println!("Unknown command. Available commands: set_position, set_kp_kd, get_feedback, quit");
+                println!("Unknown command");
             }
         }
     }
