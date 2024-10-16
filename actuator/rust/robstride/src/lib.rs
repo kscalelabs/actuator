@@ -33,6 +33,8 @@ pub struct MotorConfig {
     pub t_max: f32,
     pub zero_on_init: bool,
     pub can_timeout_command: u16,
+    pub can_timeout_scale: f32,
+    pub can_timeout_max: f32,
 }
 
 lazy_static! {
@@ -53,6 +55,8 @@ lazy_static! {
                 t_max: 12.0,
                 zero_on_init: true, // Single encoder motor.
                 can_timeout_command: 0x200c,
+                can_timeout_scale: 12000.0,
+                can_timeout_max: 100000.0,
             },
         );
         // This is probably not correct, the Type02 is not released yet.
@@ -71,6 +75,8 @@ lazy_static! {
                 t_max: 12.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
+                can_timeout_scale: 6000.0,
+                can_timeout_max: 100000.0,
             },
         );
         m.insert(
@@ -88,6 +94,8 @@ lazy_static! {
                 t_max: 60.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
+                can_timeout_scale: 6000.0,
+                can_timeout_max: 100000.0,
             },
         );
         m.insert(
@@ -105,6 +113,8 @@ lazy_static! {
                 t_max: 120.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
+                can_timeout_scale: 12000.0,
+                can_timeout_max: 100000.0,
             },
         );
         m
@@ -743,7 +753,7 @@ impl Motors {
     pub fn send_can_timeout(&mut self, timeout: f32) -> Result<(), std::io::Error> {
         for (&id, config) in self.motor_configs.clone().iter() {
             let cur_timeout = self.read_uint16_param(id, config.can_timeout_command)?;
-            let new_timeout = (timeout * 20.0).round().clamp(0.0, 100000.0) as u32;
+            let new_timeout = (timeout * config.can_timeout_scale).round().clamp(0.0, config.can_timeout_max) as u32;
             if cur_timeout as u32 == new_timeout {
                 continue;
             }
@@ -1033,7 +1043,7 @@ impl MotorsSupervisor {
         let failed_commands = Arc::clone(&self.failed_commands);
         let max_update_rate = Arc::clone(&self.max_update_rate);
         let actual_update_rate = Arc::clone(&self.actual_update_rate);
-        let serial = Arc::clone(&self.serial);
+        let serial: Arc<RwLock<bool>> = Arc::clone(&self.serial);
         let can_timeout = self.can_timeout;
 
         thread::spawn(move || {
