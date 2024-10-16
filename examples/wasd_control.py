@@ -47,8 +47,8 @@ def main(stdscr: curses.window) -> None:
                 position_motor_2 -= normal_step_size  # Move motor 2 counter-clockwise
 
             # Set target position for both motors
-            supervisor.set_target_position(args.motor_id, position_motor_1)
-            supervisor.set_target_position(args.second_motor_id, position_motor_2)
+            supervisor.set_position(args.motor_id, position_motor_1)
+            supervisor.set_position(args.second_motor_id, position_motor_2)
 
             feedback = supervisor.get_latest_feedback()
             stdscr.addstr(
