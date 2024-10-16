@@ -55,7 +55,7 @@ lazy_static! {
                 t_max: 12.0,
                 zero_on_init: true, // Single encoder motor.
                 can_timeout_command: 0x200c,
-                can_timeout_scale: 12000.0,
+                can_timeout_scale: 12.0, // from milliseconds
                 can_timeout_max: 100000.0,
             },
         );
@@ -75,7 +75,7 @@ lazy_static! {
                 t_max: 12.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
-                can_timeout_scale: 6000.0,
+                can_timeout_scale: 6.0,
                 can_timeout_max: 100000.0,
             },
         );
@@ -94,7 +94,7 @@ lazy_static! {
                 t_max: 60.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
-                can_timeout_scale: 6000.0,
+                can_timeout_scale: 6.0,
                 can_timeout_max: 100000.0,
             },
         );
@@ -113,7 +113,7 @@ lazy_static! {
                 t_max: 120.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
-                can_timeout_scale: 12000.0,
+                can_timeout_scale: 12.0,
                 can_timeout_max: 100000.0,
             },
         );
