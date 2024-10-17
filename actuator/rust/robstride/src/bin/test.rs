@@ -16,10 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     motor_infos.insert(5, MotorType::Type03);
 
     // Initialize the MotorsSupervisor
-    let supervisor = MotorsSupervisor::new("/dev/ttyCH341USB1", &motor_infos, true, 100.0, 0.5)?;
-
-    // Set all motors to MIT mode
-    supervisor.send_set_mode(RunMode::MitMode)?;
+    let supervisor = MotorsSupervisor::new("/dev/ttyCH341USB1", &motor_infos, false, 100.0, 200.0)?;
 
     // Sine wave control parameters
     let pi = std::f64::consts::PI;
@@ -32,46 +29,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_time = Instant::now();
     let mut elapsed_time = 0.0;
 
+    for id in 1..=5 {
+        supervisor.add_motor_to_zero(id)?;
+    }
+
+    for id in 1..=5 {
+        supervisor.set_kp(id, kp)?;
+        supervisor.set_kd(id, kd)?;
+    }
+
+    let mut counter = 0;
+
     while elapsed_time < duration {
-        let mut params_map = HashMap::new();
+        counter += 1;
 
         for id in 1..=5 {
-            let phase_offset = 2.0 * pi * (id as f64 - 1.0) / 5.0;
-            let desired_position = magnitude * (2.0 * pi * elapsed_time / period + phase_offset).sin();
-
-            params_map.insert(
-                id,
-                MotorControlParams {
-                    position: desired_position as f32,
-                    velocity: 0.0,
-                    kp: kp as f32,
-                    kd: kd as f32,
-                    torque: 0.0,
-                },
-            );
+            let desired_position = magnitude * (2.0 * pi * elapsed_time / period).sin();
+            supervisor.set_position(id, desired_position as f32)?;
         }
 
         // Send control commands
-        let feedbacks = supervisor.send_motor_controls(&params_map, true)?;
+        let feedbacks = supervisor.get_latest_feedback();
 
         // Print feedback
         for (id, feedback) in feedbacks {
             println!(
-                "Motor {} - Time: {:.2}s, Desired pos: {:.3}, Current pos: {:.3}, Current vel: {:.3}",
-                id, elapsed_time, params_map[&id].position, feedback.position, feedback.velocity
+                "Motor {} - Time: {:.2}s, Current pos: {:.3}, Current vel: {:.3}",
+                id, elapsed_time, feedback.position, feedback.velocity
             );
         }
 
         // Update elapsed time
         elapsed_time = start_time.elapsed().as_secs_f64();
 
-        // Sleep to maintain update rate
-        thread::sleep(Duration::from_millis(50));
+        // Sleep to maintain update rate of 50 Hz
+        let time_to_sleep = 0.02 - start_time.elapsed().as_secs_f64();
+        if time_to_sleep > 0.0 {
+            thread::sleep(Duration::from_secs_f64(time_to_sleep));
+        }
     }
 
-    // Reset all motors after the loop
-    supervisor.send_resets()?;
+    supervisor.stop();
 
     println!("Program finished");
+    println!("Average loop frequency: {} Hz", counter as f64 / elapsed_time);
     Ok(())
 }
