@@ -902,10 +902,32 @@ impl Motors {
         let response_packs = if serial {
             packs
                 .into_iter()
-                .map(|pack| self.send_command(&pack, false))
+                .map(|pack| {
+                    match self.send_command(&pack, false) {
+                        Ok(response) => Ok(response),
+                        Err(err) => {
+                            // Send a new start command if there's an error
+                            self.send_reset(pack.ex_id.id)?;
+                            self.send_start(pack.ex_id.id)?;
+                            Err(err)
+                        }
+                    }
+                })
                 .collect::<Result<Vec<_>, _>>()?
         } else {
-            self.send_commands(&packs, false, false)?
+            let mut responses = Vec::new();
+            for pack in packs {
+                match self.send_command(&pack, false) {
+                    Ok(response) => responses.push(response),
+                    Err(err) => {
+                        // Send a new start command if there's an error
+                        self.send_reset(pack.ex_id.id)?;
+                        self.send_start(pack.ex_id.id)?;
+                        return Err(err);
+                    }
+                }
+            }
+            responses
         };
 
         Ok(response_packs
@@ -1052,7 +1074,7 @@ impl MotorsSupervisor {
             }
 
             info!("Pre-flight checks completed successfully");
-            let _ = motors.send_can_timeout(can_timeout);
+            // let _ = motors.send_can_timeout(can_timeout);
             let _ = motors.send_set_mode(RunMode::MitMode);
 
             let mut last_update_time = std::time::Instant::now();
