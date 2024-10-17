@@ -636,6 +636,18 @@ impl Motors {
         Ok(())
     }
 
+    pub fn zero_motors(&mut self, motor_ids: &[u8]) -> Result<(), std::io::Error> {
+        self.send_motor_controls(
+            &motor_ids
+                .iter()
+                .map(|&id| (id, MotorControlParams::default()))
+                .collect::<HashMap<u8, MotorControlParams>>(),
+            true,
+        )?;
+        self.send_set_zeros(Some(motor_ids))?;
+        Ok(())
+    }
+
     fn read_string_param(
         &mut self,
         motor_id: u8,
@@ -1090,13 +1102,7 @@ impl MotorsSupervisor {
                     let mut motor_ids_to_zero = motors_to_zero.lock().unwrap();
                     if !motor_ids_to_zero.is_empty() {
                         let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
-                        let torque_commands = HashMap::from_iter(
-                            motor_ids
-                                .iter()
-                                .map(|id| (*id, MotorControlParams::default())),
-                        );
-                        let _ = motors.send_motor_controls(&torque_commands, true);
-                        let _ = motors.send_set_zeros(Some(&motor_ids));
+                        let _ = motors.zero_motors(&motor_ids);
                         motor_ids_to_zero.clear();
                     }
                 }
