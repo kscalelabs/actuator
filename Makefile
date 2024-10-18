@@ -19,6 +19,7 @@ py-files := $(shell find . -name '*.py')
 format:
 	@black $(py-files)
 	@ruff format $(py-files)
+	@cargo fmt
 .PHONY: format
 
 format-cpp:

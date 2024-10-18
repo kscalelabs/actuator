@@ -18,14 +18,21 @@ struct Args {
 
 fn sinusoid(
     controller: &MotorsSupervisor,
-    id: u8,
+    ids: &[u8],
     amplitude: f32,
     duration: Duration,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    controller.set_kd(id, 1.0)?;
-    controller.set_kp(id, 10.0)?;
-    controller.set_velocity(id, 0.0)?;
-    controller.set_torque(id, 0.0)?;
+    println!(
+        "Running sinusoid test for {:?} with amplitude {:?}",
+        duration, amplitude
+    );
+
+    for &id in ids {
+        controller.set_kd(id, 1.0)?;
+        controller.set_kp(id, 10.0)?;
+        controller.set_velocity(id, 0.0)?;
+        controller.set_torque(id, 0.0)?;
+    }
 
     let start = Instant::now();
     let mut last_second = start;
@@ -34,7 +41,9 @@ fn sinusoid(
     while start.elapsed() < duration {
         let t = start.elapsed().as_secs_f32();
         let pos = amplitude * (2.0 * PI * t).sin();
-        controller.set_position(id, pos)?;
+        for &id in ids {
+            controller.set_position(id, pos)?;
+        }
         std::thread::sleep(Duration::from_millis(10));
 
         // Check if a second has passed
@@ -48,7 +57,9 @@ fn sinusoid(
         }
     }
 
-    controller.set_position(id, 0.0)?;
+    for &id in ids {
+        controller.set_position(id, 0.0)?;
+    }
 
     Ok(())
 }
@@ -56,11 +67,15 @@ fn sinusoid(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    print!("Enter the TEST_ID (u8): ");
+    print!("Enter the TEST_IDS (u8, ...): ");
     io::stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    let test_id: u8 = input.trim().parse()?;
+    let test_ids: Vec<u8> = input
+        .trim()
+        .split(',')
+        .map(|s| s.trim().parse().expect("Invalid ID"))
+        .collect();
 
     print!("Enter the port name (default: /dev/ttyUSB0): ");
     io::stdout().flush()?;
@@ -73,20 +88,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         port_name
     };
 
-    print!("Enter the motor type (default: 01): ");
+    print!("Enter the motor types (default: 01, ...): ");
     io::stdout().flush()?;
-    let mut motor_type_input = String::new();
-    io::stdin().read_line(&mut motor_type_input)?;
-    let motor_type_input = motor_type_input.trim().to_string();
-    let motor_type_input = if motor_type_input.is_empty() {
-        String::from("01")
+    let mut motor_types_input = String::new();
+    io::stdin().read_line(&mut motor_types_input)?;
+    let motor_types_input: HashMap<u8, String> = if motor_types_input.trim().is_empty() {
+        test_ids.iter().map(|id| (*id, "01".to_string())).collect()
     } else {
-        motor_type_input
+        let motor_types_input_vec: Vec<String> = motor_types_input
+            .trim()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+        if motor_types_input_vec.len() != test_ids.len() {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Number of motor types must match number of test IDs",
+            )));
+        }
+        test_ids
+            .iter()
+            .zip(motor_types_input_vec.iter())
+            .map(|(id, motor_type)| (*id, motor_type.to_string()))
+            .collect()
     };
-    let motor_type = motor_type_from_str(motor_type_input.as_str())?;
-    let motor_infos: HashMap<u8, MotorType> = HashMap::from([(test_id, motor_type)]);
+
+    let motor_types: HashMap<u8, MotorType> = motor_types_input
+        .into_iter()
+        .map(|(id, type_str)| {
+            (
+                id,
+                motor_type_from_str(&type_str).expect("Invalid motor type"),
+            )
+        })
+        .collect();
+
     let controller =
-        MotorsSupervisor::new(&port_name, &motor_infos, args.verbose, args.max_update_rate)?;
+        MotorsSupervisor::new(&port_name, &motor_types, args.verbose, args.max_update_rate)?;
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");
@@ -121,8 +159,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let position: f32 = parts[1].parse()?;
-                let _ = controller.set_position(test_id, position);
-                println!("Set target position to {}", position);
+                for &id in &test_ids {
+                    let _ = controller.set_position(id, position);
+                }
+                println!("Set target position to {} for all motors", position);
             }
             "v" => {
                 if parts.len() != 2 {
@@ -130,8 +170,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let velocity: f32 = parts[1].parse()?;
-                let _ = controller.set_velocity(test_id, velocity);
-                println!("Set target velocity to {}", velocity);
+                for &id in &test_ids {
+                    let _ = controller.set_velocity(id, velocity);
+                }
+                println!("Set target velocity to {} for all motors", velocity);
             }
             "t" => {
                 if parts.len() != 2 {
@@ -139,8 +181,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let torque: f32 = parts[1].parse()?;
-                let _ = controller.set_torque(test_id, torque);
-                println!("Set target torque to {}", torque);
+                for &id in &test_ids {
+                    let _ = controller.set_torque(id, torque);
+                }
+                println!("Set target torque to {} for all motors", torque);
             }
             "kp" => {
                 if parts.len() != 2 {
@@ -148,8 +192,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let kp: f32 = parts[1].parse()?;
-                let _ = controller.set_kp(test_id, kp);
-                println!("Set KP for motor {} to {}", test_id, kp);
+                for &id in &test_ids {
+                    let _ = controller.set_kp(id, kp);
+                }
+                println!("Set KP to {} for all motors", kp);
             }
             "kd" => {
                 if parts.len() != 2 {
@@ -157,8 +203,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let kd: f32 = parts[1].parse()?;
-                let _ = controller.set_kd(test_id, kd);
-                println!("Set KD for motor {} to {}", test_id, kd);
+                for &id in &test_ids {
+                    let _ = controller.set_kd(id, kd);
+                }
+                println!("Set KD to {} for all motors", kd);
             }
             "sinusoid" | "s" => {
                 let duration = Duration::from_secs(if parts.len() == 2 {
@@ -166,12 +214,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     1
                 });
-                let _ = sinusoid(&controller, test_id, 1.0, duration);
-                println!("Ran motor {} sinusoid test", test_id);
+                let _ = sinusoid(&controller, &test_ids, 1.0, duration);
+                println!("Ran motors {:?} sinusoid test", test_ids);
             }
             "zero" | "z" => {
-                let _ = controller.add_motor_to_zero(test_id);
-                println!("Added motor {} to zero list", test_id);
+                for &id in &test_ids {
+                    let _ = controller.add_motor_to_zero(id);
+                }
+                println!("Added motors {:?} to zero list", test_ids);
             }
             "get_feedback" | "g" => {
                 let feedback = controller.get_latest_feedback();
