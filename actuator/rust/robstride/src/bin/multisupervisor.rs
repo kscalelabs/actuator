@@ -14,6 +14,8 @@ struct Args {
     min_update_rate: f64,
     #[arg(long, help = "Maximum update rate (Hz)", default_value_t = 1000.0)]
     max_update_rate: f64,
+    #[arg(long, help = "Zero on init", default_value_t = false)]
+    zero_on_init: bool,
 }
 
 fn sinusoid(
@@ -123,8 +125,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
-    let controller =
-        MotorsSupervisor::new(&port_name, &motor_types, args.verbose, args.max_update_rate)?;
+    let controller = MotorsSupervisor::new(
+        &port_name,
+        &motor_types,
+        args.verbose,
+        args.max_update_rate,
+        args.zero_on_init,
+    )?;
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");

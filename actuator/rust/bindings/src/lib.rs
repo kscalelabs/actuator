@@ -193,12 +193,13 @@ struct PyRobstrideMotorsSupervisor {
 #[pymethods]
 impl PyRobstrideMotorsSupervisor {
     #[new]
-    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0))]
+    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0, zero_on_init = false))]
     fn new(
         port_name: String,
         motor_infos: HashMap<u8, String>,
         verbose: bool,
         target_update_rate: f64,
+        zero_on_init: bool,
     ) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
@@ -209,8 +210,14 @@ impl PyRobstrideMotorsSupervisor {
             .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
         let controller =
-            RobstrideMotorsSupervisor::new(&port_name, &motor_infos, verbose, target_update_rate)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+            RobstrideMotorsSupervisor::new(
+                &port_name,
+                &motor_infos,
+                verbose,
+                target_update_rate,
+                zero_on_init,
+            )
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
