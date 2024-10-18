@@ -14,10 +14,21 @@ def main(stdscr: curses.window) -> None:
     parser.add_argument("--motor-type", type=str, default="04")
     parser.add_argument("--second-motor-id", type=int, default=2)
     parser.add_argument("--second-motor-type", type=str, default="01")
+    parser.add_argument("--zero-on-init", action="store_true")
+    parser.add_argument("--max-update-rate", type=float, default=1000.0)
+    parser.add_argument("--kd", type=float, default=1.0)
+    parser.add_argument("--kp", type=float, default=10.0)
     args = parser.parse_args()
 
-    motor_infos = {args.motor_id: args.motor_type, args.second_motor_id: args.second_motor_type}
-    supervisor = RobstrideMotorsSupervisor(args.port_name, motor_infos)
+    supervisor = RobstrideMotorsSupervisor(
+        port_name=args.port_name,
+        motor_infos={
+            args.motor_id: args.motor_type,
+            args.second_motor_id: args.second_motor_type,
+        },
+        target_update_rate=args.max_update_rate,
+        zero_on_init=args.zero_on_init,
+    )
     supervisor.add_motor_to_zero(args.motor_id)
     supervisor.add_motor_to_zero(args.second_motor_id)
 
@@ -29,6 +40,11 @@ def main(stdscr: curses.window) -> None:
 
     stdscr.nodelay(True)  # Make getch non-blocking
     stdscr.clear()
+
+    supervisor.set_kd(args.motor_id, args.kd)
+    supervisor.set_kp(args.motor_id, args.kp)
+    supervisor.set_kd(args.second_motor_id, args.kd)
+    supervisor.set_kp(args.second_motor_id, args.kp)
 
     try:
         while True:
@@ -45,6 +61,9 @@ def main(stdscr: curses.window) -> None:
                 position_motor_2 += normal_step_size  # Move motor 2 clockwise
             elif key == ord("s"):
                 position_motor_2 -= normal_step_size  # Move motor 2 counter-clockwise
+            elif key == ord("q"):
+                supervisor.stop()
+                break
 
             # Set target position for both motors
             supervisor.set_position(args.motor_id, position_motor_1)
