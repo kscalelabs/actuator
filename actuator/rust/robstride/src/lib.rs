@@ -33,6 +33,7 @@ pub struct MotorConfig {
     pub t_max: f32,
     pub zero_on_init: bool,
     pub can_timeout_command: u16,
+    pub can_timeout_factor: f32,
 }
 
 lazy_static! {
@@ -53,6 +54,7 @@ lazy_static! {
                 t_max: 12.0,
                 zero_on_init: true, // Single encoder motor.
                 can_timeout_command: 0x200c,
+                can_timeout_factor: 12000.0,
             },
         );
         // This is probably not correct, the Type02 is not released yet.
@@ -71,6 +73,7 @@ lazy_static! {
                 t_max: 12.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
+                can_timeout_factor: 12000.0,
             },
         );
         m.insert(
@@ -88,6 +91,7 @@ lazy_static! {
                 t_max: 60.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
+                can_timeout_factor: 6000.0,
             },
         );
         m.insert(
@@ -105,6 +109,7 @@ lazy_static! {
                 t_max: 120.0,
                 zero_on_init: false,
                 can_timeout_command: 0x200b,
+                can_timeout_factor: 12000.0,
             },
         );
         m
@@ -451,7 +456,7 @@ impl Motors {
             port,
             motor_configs,
             mode: RunMode::UnsetMode,
-            sleep_time: Duration::from_millis(10),
+            sleep_time: Duration::from_millis(20),
             verbose,
         })
     }
@@ -593,6 +598,22 @@ impl Motors {
         Ok(feedbacks)
     }
 
+    pub fn send_set_zero(&mut self, motor_id: u8) -> Result<(), std::io::Error> {
+        let pack = CanPack {
+            ex_id: ExId {
+                id: motor_id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::MotorZero,
+                res: 0,
+            },
+            len: 8,
+            data: vec![1, 0, 0, 0, 0, 0, 0, 0],
+        };
+
+        self.send_command(&pack, true)?;
+        Ok(())
+    }
+
     pub fn send_set_zeros(&mut self, motor_ids: Option<&[u8]>) -> Result<(), std::io::Error> {
         let ids_to_zero = motor_ids
             .map(|ids| ids.to_vec())
@@ -607,30 +628,9 @@ impl Motors {
             }
         }
 
-        // Reset.
-        for &id in &ids_to_zero {
-            self.send_reset(id)?;
-        }
-
         // Zero.
         for &id in &ids_to_zero {
-            let pack = CanPack {
-                ex_id: ExId {
-                    id,
-                    data: CAN_ID_DEBUG_UI as u16,
-                    mode: CanComMode::MotorZero,
-                    res: 0,
-                },
-                len: 8,
-                data: vec![1, 0, 0, 0, 0, 0, 0, 0],
-            };
-
-            self.send_command(&pack, true)?;
-        }
-
-        // Start.
-        for &id in &ids_to_zero {
-            self.send_start(id)?;
+            self.send_set_zero(id)?;
         }
 
         Ok(())
@@ -642,12 +642,7 @@ impl Motors {
         Ok(())
     }
 
-    fn read_string_param(
-        &mut self,
-        motor_id: u8,
-        index: u16,
-        num_packs: u8,
-    ) -> Result<String, std::io::Error> {
+    fn read_u16_param(&mut self, motor_id: u8, index: u16) -> Result<u16, std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: motor_id,
@@ -659,34 +654,6 @@ impl Motors {
             data: vec![0; 8],
         };
 
-        let index: u16 = index;
-        pack.data[..2].copy_from_slice(&index.to_le_bytes());
-        tx_packs(&mut self.port, &[pack], self.verbose)?;
-
-        let packs = rx_unpack(&mut self.port, num_packs as usize, self.verbose)?;
-
-        let name = packs
-            .iter()
-            .flat_map(|pack| pack.data[4..8].iter())
-            .map(|&b| b as char)
-            .filter(|&c| c != '\0') // Filter out null characters
-            .collect::<String>();
-        Ok(name)
-    }
-
-    fn read_uint16_param(&mut self, motor_id: u8, index: u16) -> Result<u16, std::io::Error> {
-        let mut pack = CanPack {
-            ex_id: ExId {
-                id: motor_id,
-                data: CAN_ID_DEBUG_UI as u16,
-                mode: CanComMode::ParaRead,
-                res: 0,
-            },
-            len: 8,
-            data: vec![0; 8],
-        };
-
-        let index: u16 = index;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
         tx_packs(&mut self.port, &[pack], self.verbose)?;
 
@@ -698,62 +665,32 @@ impl Motors {
             ));
         }
         let pack = packs[0].clone();
-        let value = u16::from_le_bytes(pack.data[4..6].try_into().unwrap());
-        Ok(value)
+
+        Ok(u16::from_le_bytes([pack.data[4], pack.data[5]]))
     }
 
-    pub fn read_names(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
-        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
-        let mut names = HashMap::new();
-
-        for id in motor_ids {
-            let name = self.read_string_param(id, 0x0000, 4)?;
-            names.insert(id, name);
-        }
-        Ok(names)
-    }
-
-    pub fn read_bar_codes(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
-        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
-        let mut names = HashMap::new();
-
-        for id in motor_ids {
-            let name = self.read_string_param(id, 0x0001, 4)?;
-            names.insert(id, name);
-        }
-        Ok(names)
-    }
-
-    pub fn read_build_dates(&mut self) -> Result<HashMap<u8, String>, std::io::Error> {
-        let motor_ids = self.motor_configs.keys().cloned().collect::<Vec<u8>>();
-        let mut names = HashMap::new();
-
-        for id in motor_ids {
-            let name = self.read_string_param(id, 0x1001, 3)?;
-            names.insert(id, name);
-        }
-
-        Ok(names)
+    pub fn read_can_timeout(&mut self, id: u8) -> Result<f32, std::io::Error> {
+        let config = *self.motor_configs.get(&id).ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Motor not found",
+        ))?;
+        let timeout = self.read_u16_param(id, config.can_timeout_command)?;
+        Ok(timeout as f32 * 1000.0 / config.can_timeout_factor) // In milliseconds
     }
 
     pub fn read_can_timeouts(&mut self) -> Result<HashMap<u8, f32>, std::io::Error> {
         let mut timeouts = HashMap::new();
 
         for (&id, config) in self.motor_configs.clone().iter() {
-            let timeout = self.read_uint16_param(id, config.can_timeout_command)?;
-            timeouts.insert(id, timeout as f32 / 20.0);
+            let timeout = self.read_u16_param(id, config.can_timeout_command)?;
+            timeouts.insert(id, timeout as f32 * 1000.0 / config.can_timeout_factor);
         }
         Ok(timeouts)
     }
 
     pub fn send_can_timeout(&mut self, timeout: f32) -> Result<(), std::io::Error> {
+        // NOTE: This function does not seem to work very reliabliy.
         for (&id, config) in self.motor_configs.clone().iter() {
-            let cur_timeout = self.read_uint16_param(id, config.can_timeout_command)?;
-            let new_timeout = (timeout * 20.0).round().clamp(0.0, 100000.0) as u32;
-            if cur_timeout as u32 == new_timeout {
-                continue;
-            }
-
             let mut pack = CanPack {
                 ex_id: ExId {
                     id,
@@ -769,15 +706,21 @@ impl Motors {
             pack.data[..2].copy_from_slice(&index.to_le_bytes());
             pack.data[2] = 0x04;
 
+            let new_timeout = (timeout * config.can_timeout_factor / 1000.0)
+                .round()
+                .clamp(0.0, 100000.0) as u32;
+            println!("Setting CAN timeout to {} for motor {}", new_timeout, id);
             pack.data[4..8].copy_from_slice(&new_timeout.to_le_bytes());
 
-            self.send_command(&pack, true)?;
+            let _ = self.send_command(&pack, true);
+
+            println!("CAN timeout set to {}", new_timeout);
         }
 
         Ok(())
     }
 
-    fn send_reset(&mut self, id: u8) -> Result<CanPack, std::io::Error> {
+    pub fn send_reset(&mut self, id: u8) -> Result<CanPack, std::io::Error> {
         let pack = CanPack {
             ex_id: ExId {
                 id,
@@ -794,25 +737,13 @@ impl Motors {
 
     pub fn send_resets(&mut self) -> Result<(), std::io::Error> {
         let motor_ids: Vec<u8> = self.motor_configs.keys().cloned().collect();
-        let packs: Vec<CanPack> = motor_ids
-            .iter()
-            .map(|&id| CanPack {
-                ex_id: ExId {
-                    id,
-                    data: CAN_ID_DEBUG_UI as u16,
-                    mode: CanComMode::MotorReset,
-                    res: 0,
-                },
-                len: 8,
-                data: vec![0; 8],
-            })
-            .collect();
-
-        self.send_commands(&packs, true, true)?;
+        for id in motor_ids {
+            self.send_reset(id)?;
+        }
         Ok(())
     }
 
-    fn send_start(&mut self, id: u8) -> Result<CanPack, std::io::Error> {
+    pub fn send_start(&mut self, id: u8) -> Result<CanPack, std::io::Error> {
         let pack = CanPack {
             ex_id: ExId {
                 id,
@@ -829,21 +760,9 @@ impl Motors {
 
     pub fn send_starts(&mut self) -> Result<(), std::io::Error> {
         let motor_ids: Vec<u8> = self.motor_configs.keys().cloned().collect();
-        let packs: Vec<CanPack> = motor_ids
-            .iter()
-            .map(|&id| CanPack {
-                ex_id: ExId {
-                    id,
-                    data: CAN_ID_DEBUG_UI as u16,
-                    mode: CanComMode::MotorIn,
-                    res: 0,
-                },
-                len: 8,
-                data: vec![0; 8],
-            })
-            .collect();
-
-        self.send_commands(&packs, true, true)?;
+        for id in motor_ids {
+            self.send_start(id)?;
+        }
         Ok(())
     }
 
@@ -972,7 +891,6 @@ pub struct MotorsSupervisor {
     max_update_rate: Arc<RwLock<f64>>,
     actual_update_rate: Arc<RwLock<f64>>,
     serial: Arc<RwLock<bool>>,
-    can_timeout: f32,
 }
 
 impl MotorsSupervisor {
@@ -981,7 +899,6 @@ impl MotorsSupervisor {
         motor_infos: &HashMap<u8, MotorType>,
         verbose: bool,
         max_update_rate: f64,
-        can_timeout: f32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos, verbose)?;
@@ -1029,7 +946,6 @@ impl MotorsSupervisor {
             max_update_rate: Arc::new(RwLock::new(max_update_rate)),
             actual_update_rate: Arc::new(RwLock::new(0.0)),
             serial: Arc::new(RwLock::new(true)),
-            can_timeout,
         };
 
         controller.start_control_thread();
@@ -1050,7 +966,6 @@ impl MotorsSupervisor {
         let max_update_rate = Arc::clone(&self.max_update_rate);
         let actual_update_rate = Arc::clone(&self.actual_update_rate);
         let serial = Arc::clone(&self.serial);
-        let can_timeout = self.can_timeout;
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
@@ -1068,7 +983,6 @@ impl MotorsSupervisor {
             }
 
             info!("Pre-flight checks completed successfully");
-            let _ = motors.send_can_timeout(can_timeout);
             let _ = motors.send_set_mode(RunMode::MitMode);
 
             let mut last_update_time = std::time::Instant::now();

@@ -14,8 +14,6 @@ struct Args {
     min_update_rate: f64,
     #[arg(long, help = "Maximum update rate (Hz)", default_value_t = 1000.0)]
     max_update_rate: f64,
-    #[arg(long, help = "CAN timeout (ms)", default_value_t = 200.0)]
-    can_timeout: f32,
 }
 
 fn sinusoid(
@@ -87,13 +85,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let motor_type = motor_type_from_str(motor_type_input.as_str())?;
     let motor_infos: HashMap<u8, MotorType> = HashMap::from([(test_id, motor_type)]);
-    let controller = MotorsSupervisor::new(
-        &port_name,
-        &motor_infos,
-        args.verbose,
-        args.max_update_rate,
-        args.can_timeout,
-    )?;
+    let controller =
+        MotorsSupervisor::new(&port_name, &motor_infos, args.verbose, args.max_update_rate)?;
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");

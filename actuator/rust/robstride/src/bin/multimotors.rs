@@ -23,9 +23,8 @@ fn sinusoid(
         duration, amplitude
     );
 
-    let _ = motors.send_resets();
-    let _ = motors.send_starts();
-    let _ = motors.zero_motors(&ids);
+    motors.send_resets()?;
+    motors.send_starts()?;
 
     let start = Instant::now();
     let mut command_count = 0;
@@ -136,6 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Motor Controller Test CLI");
     println!("Available commands:");
     println!("  sinusoid / s (<duration>)");
+    println!("  clear-can / c");
     println!("  zero / z");
     println!("  quit / q");
 
@@ -160,6 +160,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 let _ = sinusoid(&mut motors, test_ids.clone(), 1.0, duration);
                 println!("Ran motor {:?} sinusoid test", test_ids);
+            }
+            "clear-can" | "c" => {
+                let _ = motors.send_can_timeout(0.0);
+                println!("Cleared CAN timeout for {:?}", test_ids);
             }
             "zero" | "z" => {
                 let _ = motors.zero_motors(&test_ids);

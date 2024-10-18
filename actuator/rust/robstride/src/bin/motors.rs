@@ -18,9 +18,14 @@ fn sinusoid(
     amplitude: f32,
     duration: Duration,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let _ = motors.send_resets();
-    let _ = motors.send_starts();
-    let _ = motors.zero_motors(&[id]);
+    println!(
+        "Running sinusoid test for {:?} with amplitude {:?}",
+        duration, amplitude
+    );
+
+    motors.send_resets()?;
+    motors.send_starts()?;
+    motors.zero_motors(&[id])?;
 
     let start = Instant::now();
     let mut command_count = 0;
@@ -118,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     1
                 });
-                let _ = sinusoid(&mut motors, test_id, 1.0, duration);
+                sinusoid(&mut motors, test_id, 1.0, duration)?;
                 println!("Ran motor {} sinusoid test", test_id);
             }
             "zero" | "z" => {
