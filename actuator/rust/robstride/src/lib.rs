@@ -637,13 +637,7 @@ impl Motors {
     }
 
     pub fn zero_motors(&mut self, motor_ids: &[u8]) -> Result<(), std::io::Error> {
-        self.send_motor_controls(
-            &motor_ids
-                .iter()
-                .map(|&id| (id, MotorControlParams::default()))
-                .collect::<HashMap<u8, MotorControlParams>>(),
-            true,
-        )?;
+        self.send_zero_torque(motor_ids)?;
         self.send_set_zeros(Some(motor_ids))?;
         Ok(())
     }
@@ -928,6 +922,16 @@ impl Motors {
                     .ok()
             })
             .collect::<HashMap<u8, MotorFeedback>>())
+    }
+
+    pub fn send_zero_torque(&mut self, motor_ids: &[u8]) -> Result<(), std::io::Error> {
+        let params = HashMap::from_iter(
+            motor_ids
+                .iter()
+                .map(|&id| (id, MotorControlParams::default())),
+        );
+        self.send_motor_controls(&params, true)?;
+        Ok(())
     }
 
     fn unpack_feedback(&mut self, pack: &CanPack) -> Result<MotorFeedback, std::io::Error> {

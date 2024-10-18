@@ -18,8 +18,13 @@ fn sinusoid(
     amplitude: f32,
     duration: Duration,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let start = Instant::now();
+    let _ = motors.send_resets();
+    let _ = motors.send_starts();
+    let _ = motors.zero_motors(&[id]);
 
+    let start = Instant::now();
+    let mut command_count = 0;
+    let mut last_second = start;
     while start.elapsed() < duration {
         let t = start.elapsed().as_secs_f32();
         let pos = amplitude * (2.0 * PI * t).sin();
@@ -36,7 +41,20 @@ fn sinusoid(
             )]),
             true,
         )?;
+
+        command_count += 1;
+
+        // Check if a second has passed
+        if last_second.elapsed() > Duration::from_secs(1) {
+            println!(
+                "Commands per second: {}",
+                command_count as f32 / start.elapsed().as_secs_f32()
+            );
+            last_second = Instant::now();
+        }
     }
+
+    let _ = motors.send_resets();
 
     Ok(())
 }
@@ -77,16 +95,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Motor Controller Test CLI");
     println!("Available commands:");
-    println!("  p <position>");
-    println!("  v <velocity>");
-    println!("  t <torque>");
-    println!("  kp <kp>");
-    println!("  kd <kd>");
-    println!("  sinusoid / s");
+    println!("  sinusoid / s (<duration>)");
     println!("  zero / z");
-    println!("  get_feedback / g");
-    println!("  pause / w");
-    println!("  reset / r");
     println!("  quit / q");
 
     loop {
@@ -103,7 +113,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match parts[0] {
             "sinusoid" | "s" => {
-                let _ = sinusoid(&mut motors, test_id, 1.0, Duration::from_secs(1));
+                let duration = Duration::from_secs(if parts.len() == 2 {
+                    parts[1].parse::<u64>()?
+                } else {
+                    1
+                });
+                let _ = sinusoid(&mut motors, test_id, 1.0, duration);
                 println!("Ran motor {} sinusoid test", test_id);
             }
             "zero" | "z" => {

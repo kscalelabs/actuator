@@ -24,18 +24,30 @@ fn sinusoid(
     amplitude: f32,
     duration: Duration,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let start = Instant::now();
-
     controller.set_kd(id, 1.0)?;
     controller.set_kp(id, 10.0)?;
     controller.set_velocity(id, 0.0)?;
     controller.set_torque(id, 0.0)?;
+
+    let start = Instant::now();
+    let mut last_second = start;
+    controller.reset_command_counters();
 
     while start.elapsed() < duration {
         let t = start.elapsed().as_secs_f32();
         let pos = amplitude * (2.0 * PI * t).sin();
         controller.set_position(id, pos)?;
         std::thread::sleep(Duration::from_millis(10));
+
+        // Check if a second has passed
+        let total_commands = controller.get_total_commands();
+        if last_second.elapsed() > Duration::from_secs(1) {
+            println!(
+                "Commands per second: {}",
+                total_commands as f32 / start.elapsed().as_secs_f32()
+            );
+            last_second = Instant::now();
+        }
     }
 
     controller.set_position(id, 0.0)?;
@@ -90,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  t <torque>");
     println!("  kp <kp>");
     println!("  kd <kd>");
-    println!("  sinusoid / s");
+    println!("  sinusoid / s (<duration>)");
     println!("  zero / z");
     println!("  get_feedback / g");
     println!("  pause / w");
@@ -156,7 +168,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Set KD for motor {} to {}", test_id, kd);
             }
             "sinusoid" | "s" => {
-                let _ = sinusoid(&controller, test_id, 1.0, Duration::from_secs(1));
+                let duration = Duration::from_secs(if parts.len() == 2 {
+                    parts[1].parse::<u64>()?
+                } else {
+                    1
+                });
+                let _ = sinusoid(&controller, test_id, 1.0, duration);
                 println!("Ran motor {} sinusoid test", test_id);
             }
             "zero" | "z" => {
