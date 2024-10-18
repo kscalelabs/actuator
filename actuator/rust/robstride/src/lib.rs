@@ -899,6 +899,7 @@ impl MotorsSupervisor {
         motor_infos: &HashMap<u8, MotorType>,
         verbose: bool,
         max_update_rate: f64,
+        zero_on_init: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos, verbose)?;
@@ -925,7 +926,7 @@ impl MotorsSupervisor {
         let zero_on_init_motors = motors
             .motor_configs
             .iter()
-            .filter(|(_, &config)| config.zero_on_init)
+            .filter(|(_, &config)| config.zero_on_init || zero_on_init)
             .map(|(&id, _)| id)
             .collect::<HashSet<u8>>();
 
