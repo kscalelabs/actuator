@@ -3,8 +3,10 @@
 __version__ = "0.0.22"
 
 from .rust.bindings import (
+    PyRobstrideMotorConfig as RobstrideMotorConfig,
     PyRobstrideMotorControlParams as RobstrideMotorControlParams,
     PyRobstrideMotorFeedback as RobstrideMotorFeedback,
     PyRobstrideMotors as RobstrideMotors,
     PyRobstrideMotorsSupervisor as RobstrideMotorsSupervisor,
+    PyRobstrideMotorType as RobstrideMotorType,
 )

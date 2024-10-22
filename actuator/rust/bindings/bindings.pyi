@@ -3,6 +3,21 @@
 
 import typing
 
+class PyRobstrideMotorConfig:
+    p_min: float
+    p_max: float
+    v_min: float
+    v_max: float
+    kp_min: float
+    kp_max: float
+    kd_min: float
+    kd_max: float
+    t_min: float
+    t_max: float
+    zero_on_init: bool
+    can_timeout_command: int
+    can_timeout_factor: float
+
 class PyRobstrideMotorControlParams:
     position: float
     velocity: float
@@ -29,6 +44,21 @@ class PyRobstrideMotorFeedback:
         ...
 
 
+class PyRobstrideMotorType:
+    def __repr__(self) -> str:
+        ...
+
+    @staticmethod
+    def from_str(s:str) -> PyRobstrideMotorType:
+        ...
+
+    def __hash__(self) -> int:
+        ...
+
+    def __eq__(self, other:typing.Any) -> bool:
+        ...
+
+
 class PyRobstrideMotors:
     def __new__(cls,port_name,motor_infos,verbose = ...): ...
     def send_get_mode(self) -> dict[int, str]:
@@ -44,6 +74,10 @@ class PyRobstrideMotors:
         ...
 
     def __repr__(self) -> str:
+        ...
+
+    @staticmethod
+    def get_default_configs() -> dict[PyRobstrideMotorType, PyRobstrideMotorConfig]:
         ...
 
 

@@ -7,7 +7,7 @@ use std::time::Duration;
 pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B921600;
 
 // WARNING: NOT A VALID BAUDRATE
-// This is just a configuration to build on MacOS
+// This is just a configuration to build without errors on MacOS
 #[cfg(target_os = "macos")]
 pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B115200;
 

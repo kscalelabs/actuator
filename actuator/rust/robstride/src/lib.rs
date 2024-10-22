@@ -22,10 +22,11 @@ pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
 pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B921600;
 
 // WARNING: NOT A VALID BAUDRATE
-// This is just a configuration to build on MacOS
+// This is just a configuration to build without errors on MacOS
 #[cfg(target_os = "macos")]
 pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B115200;
 
+#[derive(Debug, Clone, Copy)]
 pub struct MotorConfig {
     pub p_min: f32,
     pub p_max: f32,

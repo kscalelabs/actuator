@@ -4,8 +4,9 @@
 
 import glob
 import re
-
+import subprocess
 from setuptools import find_packages, setup
+from setuptools.command.build_ext import build_ext
 from setuptools_rust import Binding, RustExtension
 
 with open("README.md", "r", encoding="utf-8") as f:
@@ -31,6 +32,14 @@ for ext in ("pyi", "rs", "toml", "so"):
     package_data.extend(glob.iglob(f"actuator/**/*.{ext}", recursive=True))
 
 
+class RustBuildExt(build_ext):
+    def run(self) -> None:
+        # Run the stub generator
+        subprocess.run(["cargo", "run", "--bin", "stub_gen"], check=True)
+        # Call the original build_ext command
+        super().run()
+
+
 setup(
     name="actuator",
     version=version,
@@ -53,5 +62,6 @@ setup(
     extras_require={"dev": requirements_dev},
     include_package_data=True,
     package_data={"actuator": package_data},
-    packages=find_packages(include=["actuator", "actuator.*"]),
+    packages=find_packages(include=["actuator"]),
+    cmdclass={"build_ext": RustBuildExt},
 )
