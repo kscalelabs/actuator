@@ -2,7 +2,8 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use robstride::{
-    motor_type_from_str as robstride_motor_type_from_str, motor_mode_from_str as robstride_motor_mode_from_str,
+    motor_mode_from_str as robstride_motor_mode_from_str,
+    motor_type_from_str as robstride_motor_type_from_str,
     MotorControlParams as RobstrideMotorControlParams, MotorFeedback as RobstrideMotorFeedback,
     MotorType as RobstrideMotorType, Motors as RobstrideMotors,
     MotorsSupervisor as RobstrideMotorsSupervisor,
@@ -230,15 +231,14 @@ impl PyRobstrideMotorsSupervisor {
             })
             .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
 
-        let controller =
-            RobstrideMotorsSupervisor::new(
-                &port_name,
-                &motor_infos,
-                verbose,
-                target_update_rate,
-                zero_on_init,
-            )
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        let controller = RobstrideMotorsSupervisor::new(
+            &port_name,
+            &motor_infos,
+            verbose,
+            target_update_rate,
+            zero_on_init,
+        )
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
