@@ -536,7 +536,7 @@ impl From<PyRobstrideMotorType> for RobstrideMotorType {
 }
 
 #[pymodule]
-fn bindings(m: &PyModule) -> PyResult<()> {
+fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyRobstrideMotors>()?;
     m.add_class::<PyRobstrideMotorFeedback>()?;
     m.add_class::<PyRobstrideMotorsSupervisor>()?;
