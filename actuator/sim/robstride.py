@@ -1,11 +1,11 @@
 """Simulated Robstride motors."""
 
 import time
-from enum import Enum, auto
 
 from actuator import RobstrideMotorControlParams, RobstrideMotorFeedback, RobstrideMotors, RobstrideMotorType
 
 ROBSTRIDE_CONFIGS = RobstrideMotors.get_default_configs()
+
 
 class _MotorSim:
     def __init__(self, motor_id: int) -> None:
@@ -35,8 +35,7 @@ class RobstrideMotorsSim:
         self.port_name = port_name
         # breakpoint()
         self.motor_configs = {
-            id: ROBSTRIDE_CONFIGS[RobstrideMotorType.from_str(motor_type)]
-            for id, motor_type in motor_infos.items()
+            id: ROBSTRIDE_CONFIGS[RobstrideMotorType.from_str(motor_type)] for id, motor_type in motor_infos.items()
         }
         self.verbose = verbose
 

@@ -3,13 +3,10 @@ use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use robstride::{
     motor_mode_from_str as robstride_motor_mode_from_str,
-    motor_type_from_str as robstride_motor_type_from_str,
+    motor_type_from_str as robstride_motor_type_from_str, MotorConfig as RobstrideMotorConfig,
     MotorControlParams as RobstrideMotorControlParams, MotorFeedback as RobstrideMotorFeedback,
     MotorType as RobstrideMotorType, Motors as RobstrideMotors,
-    MotorsSupervisor as RobstrideMotorsSupervisor,
-    MotorConfig as RobstrideMotorConfig,
-    ROBSTRIDE_CONFIGS as RobstrideDefaultConfigs,
-
+    MotorsSupervisor as RobstrideMotorsSupervisor, ROBSTRIDE_CONFIGS as RobstrideDefaultConfigs,
 };
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -402,8 +399,6 @@ impl PyRobstrideMotorsSupervisor {
     }
 }
 
-
-
 #[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
@@ -435,7 +430,6 @@ struct PyRobstrideMotorConfig {
     #[pyo3(get)]
     can_timeout_factor: f32,
 }
-
 
 impl From<RobstrideMotorConfig> for PyRobstrideMotorConfig {
     fn from(config: RobstrideMotorConfig) -> Self {
@@ -553,4 +547,3 @@ fn bindings(m: &PyModule) -> PyResult<()> {
 }
 
 define_stub_info_gatherer!(stub_info);
-
