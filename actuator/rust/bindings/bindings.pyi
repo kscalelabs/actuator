@@ -24,6 +24,10 @@ class PyRobstrideMotorFeedback:
     def __repr__(self) -> str:
         ...
 
+    @staticmethod
+    def create_feedback(can_id:int, position:float, velocity:float, torque:float, mode:str, faults:int) -> PyRobstrideMotorFeedback:
+        ...
+
 
 class PyRobstrideMotors:
     def __new__(cls,port_name,motor_infos,verbose = ...): ...

@@ -18,7 +18,13 @@ pub const CAN_ID_MOTOR_DEFAULT: u8 = 0x7F;
 pub const CAN_ID_BROADCAST: u8 = 0xFE;
 pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
 
-pub const BAUDRATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B921600;
+#[cfg(target_os = "linux")]
+pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B921600;
+
+// WARNING: NOT A VALID BAUDRATE
+// This is just a configuration to build on MacOS
+#[cfg(target_os = "macos")]
+pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B115200;
 
 pub struct MotorConfig {
     pub p_min: f32,
@@ -384,6 +390,19 @@ pub enum MotorType {
     Type02,
     Type03,
     Type04,
+}
+
+pub fn motor_mode_from_str(s: &str) -> Result<MotorMode, std::io::Error> {
+    match s {
+        "Reset" => Ok(MotorMode::Reset),
+        "Cali" => Ok(MotorMode::Cali),
+        "Motor" => Ok(MotorMode::Motor),
+        "Brake" => Ok(MotorMode::Brake),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid motor mode",
+        )),
+    }
 }
 
 pub fn motor_type_from_str(s: &str) -> Result<MotorType, std::io::Error> {
