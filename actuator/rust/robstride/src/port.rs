@@ -3,7 +3,14 @@ use serialport::{SerialPort, TTYPort};
 use std::os::unix::io::FromRawFd;
 use std::time::Duration;
 
-const BAUD_RATE: termios::BaudRate = termios::BaudRate::B921600;
+#[cfg(target_os = "linux")]
+pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B921600;
+
+// WARNING: NOT A VALID BAUDRATE
+// This is just a configuration to build on MacOS
+#[cfg(target_os = "macos")]
+pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B115200;
+
 const TIMEOUT: Duration = Duration::from_millis(10);
 
 pub fn init_serial_port(device: &str) -> Result<TTYPort, std::io::Error> {

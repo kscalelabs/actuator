@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use robstride::{
-    motor_type_from_str as robstride_motor_type_from_str,
+    motor_type_from_str as robstride_motor_type_from_str, motor_mode_from_str as robstride_motor_mode_from_str,
     MotorControlParams as RobstrideMotorControlParams, MotorFeedback as RobstrideMotorFeedback,
     MotorType as RobstrideMotorType, Motors as RobstrideMotors,
     MotorsSupervisor as RobstrideMotorsSupervisor,
@@ -105,6 +105,27 @@ impl PyRobstrideMotorFeedback {
             "PyRobstrideMotorFeedback(can_id={}, position={:.2}, velocity={:.2}, torque={:.2}, mode='{}', faults={})",
             self.can_id, self.position, self.velocity, self.torque, self.mode, self.faults
         ))
+    }
+
+    #[staticmethod]
+    fn create_feedback(
+        can_id: u8,
+        position: f32,
+        velocity: f32,
+        torque: f32,
+        mode: String,
+        faults: u16,
+    ) -> PyResult<Self> {
+        let feedback = RobstrideMotorFeedback {
+            can_id,
+            position,
+            velocity,
+            torque,
+            mode: robstride_motor_mode_from_str(mode.as_str())?,
+            faults,
+        };
+
+        Ok(feedback.into())
     }
 }
 
