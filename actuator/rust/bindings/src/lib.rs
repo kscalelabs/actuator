@@ -503,7 +503,7 @@ impl PyRobstrideMotorType {
         Ok(self.value as isize)
     }
 
-    fn __eq__(&self, other: &PyAny) -> PyResult<bool> {
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
         if let Ok(other) = other.extract::<PyRobstrideMotorType>() {
             Ok(self.value == other.value)
         } else {
