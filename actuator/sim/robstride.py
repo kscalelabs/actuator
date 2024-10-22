@@ -1,119 +1,10 @@
 """Simulated Robstride motors."""
 
 import time
-from enum import Enum, auto
 
-from actuator import RobstrideMotorControlParams, RobstrideMotorFeedback
+from actuator import RobstrideMotorControlParams, RobstrideMotorFeedback, RobstrideMotors, RobstrideMotorType
 
-
-class MotorType(Enum):
-    Type01 = auto()
-    Type02 = auto()
-    Type03 = auto()
-    Type04 = auto()
-
-    @classmethod
-    def from_str(cls, s: str) -> "MotorType":
-        try:
-            return cls[f"Type{s}"]
-        except KeyError:
-            raise ValueError(f"Invalid motor type: {s}")
-
-
-class MotorConfig:
-    def __init__(
-        self,
-        p_min: float,
-        p_max: float,
-        v_min: float,
-        v_max: float,
-        kp_min: float,
-        kp_max: float,
-        kd_min: float,
-        kd_max: float,
-        t_min: float,
-        t_max: float,
-        zero_on_init: bool,
-        can_timeout_command: int,
-        can_timeout_factor: float,
-    ) -> None:
-        self.p_min = p_min
-        self.p_max = p_max
-        self.v_min = v_min
-        self.v_max = v_max
-        self.kp_min = kp_min
-        self.kp_max = kp_max
-        self.kd_min = kd_min
-        self.kd_max = kd_max
-        self.t_min = t_min
-        self.t_max = t_max
-        self.zero_on_init = zero_on_init
-        self.can_timeout_command = can_timeout_command
-        self.can_timeout_factor = can_timeout_factor
-
-
-ROBSTRIDE_CONFIGS = {
-    MotorType.Type01: MotorConfig(
-        p_min=-12.5,
-        p_max=12.5,
-        v_min=-44.0,
-        v_max=44.0,
-        kp_min=0.0,
-        kp_max=500.0,
-        kd_min=0.0,
-        kd_max=5.0,
-        t_min=-12.0,
-        t_max=12.0,
-        zero_on_init=True,
-        can_timeout_command=0x200C,
-        can_timeout_factor=12000.0,
-    ),
-    MotorType.Type02: MotorConfig(
-        p_min=-12.5,
-        p_max=12.5,
-        v_min=-44.0,
-        v_max=44.0,
-        kp_min=0.0,
-        kp_max=500.0,
-        kd_min=0.0,
-        kd_max=5.0,
-        t_min=-12.0,
-        t_max=12.0,
-        zero_on_init=False,
-        can_timeout_command=0x200B,
-        can_timeout_factor=12000.0,
-    ),
-    MotorType.Type03: MotorConfig(
-        p_min=-12.5,
-        p_max=12.5,
-        v_min=-44.0,
-        v_max=44.0,
-        kp_min=0.0,
-        kp_max=500.0,
-        kd_min=0.0,
-        kd_max=5.0,
-        t_min=-12.0,
-        t_max=12.0,
-        zero_on_init=False,
-        can_timeout_command=0x200B,
-        can_timeout_factor=12000.0,
-    ),
-    MotorType.Type04: MotorConfig(
-        p_min=-12.5,
-        p_max=12.5,
-        v_min=-44.0,
-        v_max=44.0,
-        kp_min=0.0,
-        kp_max=500.0,
-        kd_min=0.0,
-        kd_max=5.0,
-        t_min=-12.0,
-        t_max=12.0,
-        zero_on_init=False,
-        can_timeout_command=0x200B,
-        can_timeout_factor=12000.0,
-    ),
-}
+ROBSTRIDE_CONFIGS = RobstrideMotors.get_default_configs()
 
 
 class _MotorSim:
@@ -142,8 +33,9 @@ class _MotorSim:
 class RobstrideMotorsSim:
     def __init__(self, port_name: str, motor_infos: dict[int, str], verbose: bool = False) -> None:
         self.port_name = port_name
+        # breakpoint()
         self.motor_configs = {
-            id: ROBSTRIDE_CONFIGS[MotorType.from_str(motor_type)] for id, motor_type in motor_infos.items()
+            id: ROBSTRIDE_CONFIGS[RobstrideMotorType.from_str(motor_type)] for id, motor_type in motor_infos.items()
         }
         self.verbose = verbose
 

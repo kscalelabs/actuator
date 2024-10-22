@@ -3,12 +3,13 @@ use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use robstride::{
     motor_mode_from_str as robstride_motor_mode_from_str,
-    motor_type_from_str as robstride_motor_type_from_str,
+    motor_type_from_str as robstride_motor_type_from_str, MotorConfig as RobstrideMotorConfig,
     MotorControlParams as RobstrideMotorControlParams, MotorFeedback as RobstrideMotorFeedback,
     MotorType as RobstrideMotorType, Motors as RobstrideMotors,
-    MotorsSupervisor as RobstrideMotorsSupervisor,
+    MotorsSupervisor as RobstrideMotorsSupervisor, ROBSTRIDE_CONFIGS as RobstrideDefaultConfigs,
 };
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 #[gen_stub_pyclass]
 #[pyclass]
@@ -77,6 +78,14 @@ impl PyRobstrideMotors {
 
     fn __repr__(&self) -> PyResult<String> {
         Ok(format!("PyRobstrideMotors"))
+    }
+
+    #[staticmethod]
+    fn get_default_configs() -> PyResult<HashMap<PyRobstrideMotorType, PyRobstrideMotorConfig>> {
+        Ok(RobstrideDefaultConfigs
+            .iter()
+            .map(|(motor_type, config)| ((*motor_type).into(), (*config).into()))
+            .collect())
     }
 }
 
@@ -390,12 +399,150 @@ impl PyRobstrideMotorsSupervisor {
     }
 }
 
+#[gen_stub_pyclass]
+#[pyclass]
+#[derive(Clone)]
+struct PyRobstrideMotorConfig {
+    #[pyo3(get)]
+    p_min: f32,
+    #[pyo3(get)]
+    p_max: f32,
+    #[pyo3(get)]
+    v_min: f32,
+    #[pyo3(get)]
+    v_max: f32,
+    #[pyo3(get)]
+    kp_min: f32,
+    #[pyo3(get)]
+    kp_max: f32,
+    #[pyo3(get)]
+    kd_min: f32,
+    #[pyo3(get)]
+    kd_max: f32,
+    #[pyo3(get)]
+    t_min: f32,
+    #[pyo3(get)]
+    t_max: f32,
+    #[pyo3(get)]
+    zero_on_init: bool,
+    #[pyo3(get)]
+    can_timeout_command: u16,
+    #[pyo3(get)]
+    can_timeout_factor: f32,
+}
+
+impl From<RobstrideMotorConfig> for PyRobstrideMotorConfig {
+    fn from(config: RobstrideMotorConfig) -> Self {
+        PyRobstrideMotorConfig {
+            p_min: config.p_min,
+            p_max: config.p_max,
+            v_min: config.v_min,
+            v_max: config.v_max,
+            kp_min: config.kp_min,
+            kp_max: config.kp_max,
+            kd_min: config.kd_min,
+            kd_max: config.kd_max,
+            t_min: config.t_min,
+            t_max: config.t_max,
+            zero_on_init: config.zero_on_init,
+            can_timeout_command: config.can_timeout_command,
+            can_timeout_factor: config.can_timeout_factor,
+        }
+    }
+}
+
+#[gen_stub_pyclass]
+#[pyclass]
+#[derive(Copy, Clone, Debug, Eq)]
+struct PyRobstrideMotorType {
+    value: u8,
+}
+
+impl Hash for PyRobstrideMotorType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
+impl PartialEq for PyRobstrideMotorType {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyRobstrideMotorType {
+    #[classattr]
+    const TYPE01: Self = PyRobstrideMotorType { value: 0 };
+    #[classattr]
+    const TYPE02: Self = PyRobstrideMotorType { value: 1 };
+    #[classattr]
+    const TYPE03: Self = PyRobstrideMotorType { value: 2 };
+    #[classattr]
+    const TYPE04: Self = PyRobstrideMotorType { value: 3 };
+
+    fn __repr__(&self) -> PyResult<String> {
+        let type_name = match self.value {
+            0 => "TYPE01",
+            1 => "TYPE02",
+            2 => "TYPE03",
+            3 => "TYPE04",
+            _ => "Unknown",
+        };
+        Ok(format!("PyRobstrideMotorType::{}", type_name))
+    }
+
+    #[staticmethod]
+    fn from_str(s: &str) -> PyResult<Self> {
+        let motor_type = robstride_motor_type_from_str(s)?;
+        Ok(PyRobstrideMotorType::from(motor_type))
+    }
+
+    fn __hash__(&self) -> PyResult<isize> {
+        Ok(self.value as isize)
+    }
+
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
+        if let Ok(other) = other.extract::<PyRobstrideMotorType>() {
+            Ok(self.value == other.value)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+impl From<RobstrideMotorType> for PyRobstrideMotorType {
+    fn from(motor_type: RobstrideMotorType) -> Self {
+        match motor_type {
+            RobstrideMotorType::Type01 => PyRobstrideMotorType::TYPE01,
+            RobstrideMotorType::Type02 => PyRobstrideMotorType::TYPE02,
+            RobstrideMotorType::Type03 => PyRobstrideMotorType::TYPE03,
+            RobstrideMotorType::Type04 => PyRobstrideMotorType::TYPE04,
+        }
+    }
+}
+
+impl From<PyRobstrideMotorType> for RobstrideMotorType {
+    fn from(py_motor_type: PyRobstrideMotorType) -> Self {
+        match py_motor_type.value {
+            0 => RobstrideMotorType::Type01,
+            1 => RobstrideMotorType::Type02,
+            2 => RobstrideMotorType::Type03,
+            3 => RobstrideMotorType::Type04,
+            _ => RobstrideMotorType::Type04,
+        }
+    }
+}
+
 #[pymodule]
 fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyRobstrideMotors>()?;
     m.add_class::<PyRobstrideMotorFeedback>()?;
     m.add_class::<PyRobstrideMotorsSupervisor>()?;
     m.add_class::<PyRobstrideMotorControlParams>()?;
+    m.add_class::<PyRobstrideMotorConfig>()?;
+    m.add_class::<PyRobstrideMotorType>()?;
     Ok(())
 }
 
