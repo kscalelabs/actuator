@@ -5,7 +5,7 @@
 import glob
 import re
 
-from setuptools import setup
+from setuptools import find_packages, setup
 from setuptools_rust import Binding, RustExtension
 
 with open("README.md", "r", encoding="utf-8") as f:
@@ -35,7 +35,7 @@ setup(
     name="actuator",
     version=version,
     description="Python interface for controlling various robotic actuators",
-    author="Benjamin Bolte",
+    author="K-Scale Labs",
     url="https://github.com/kscalelabs/actuator",
     rust_extensions=[
         RustExtension(
@@ -53,5 +53,5 @@ setup(
     extras_require={"dev": requirements_dev},
     include_package_data=True,
     package_data={"actuator": package_data},
-    packages=["actuator"],
+    packages=find_packages(include=["actuator", "actuator.*"]),
 )
