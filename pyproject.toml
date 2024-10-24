@@ -40,7 +40,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 
-module = ["actuator.rust.bindings"]
+module = ["actuator.bindings"]
 
 disable_error_code = ["no-untyped-def"]
 
