@@ -16,7 +16,7 @@ concurrency:
 jobs:
   publish-python:
     timeout-minutes: 10
-    name: Build and publish
+    name: Build and publish Python package
     runs-on: ubuntu-latest
 
     steps:
@@ -46,7 +46,7 @@ jobs:
 
   publish-rust:
     timeout-minutes: 10
-    name: Build and publish
+    name: Build and publish Rust package
     runs-on: ubuntu-latest
 
     steps:
