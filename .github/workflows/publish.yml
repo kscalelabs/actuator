@@ -1,4 +1,4 @@
-name: Publish Python Package
+name: Publish Python and Rust Packages
 
 on:
   release:
