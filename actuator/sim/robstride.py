@@ -33,7 +33,6 @@ class _MotorSim:
 class RobstrideMotorsSim:
     def __init__(self, port_name: str, motor_infos: dict[int, str], verbose: bool = False) -> None:
         self.port_name = port_name
-        # breakpoint()
         self.motor_configs = {
             id: ROBSTRIDE_CONFIGS[RobstrideMotorType.from_str(motor_type)] for id, motor_type in motor_infos.items()
         }
@@ -53,7 +52,9 @@ class RobstrideMotorsSim:
             print("Motors started")
 
     def send_motor_controls(
-        self, motor_controls: dict[int, RobstrideMotorControlParams], serial: bool
+        self,
+        motor_controls: dict[int, RobstrideMotorControlParams],
+        serial: bool,
     ) -> dict[int, RobstrideMotorFeedback]:
         feedback: dict[int, RobstrideMotorFeedback] = {}
         for motor_id, params in motor_controls.items():

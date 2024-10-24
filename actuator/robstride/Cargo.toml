@@ -1,12 +1,12 @@
 [package]
 name = "robstride"
+authors.workspace = true
 version.workspace = true
 edition.workspace = true
 description.workspace = true
-authors.workspace = true
 repository.workspace = true
 license.workspace = true
-readme.workspace = true
+readme.workspace = "README.md"
 
 [lib]
 name = "robstride"
@@ -18,5 +18,12 @@ ctrlc = "3.4.5"
 lazy_static = "1.4.0"
 spin_sleep = "1.2.1"
 nix = "0.26.2"
-clap = { version = "4.3", features = ["derive"] }
 log = "0.4.22"
+
+[[bin]]
+name = "motors"
+path = "src/bin/motors.rs"
+
+[dependencies.clap]
+version = "4.3"
+features = ["derive"]

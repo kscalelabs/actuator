@@ -1,16 +1,18 @@
 [workspace]
+
 members = [
-    "actuator/rust/bindings",
-    "actuator/rust/robstride",
+    "actuator/bindings",
+    "actuator/robstride",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
-edition = "2021"
 
+version = "0.1.0"
+authors = ["Wesley Maa <wesley@kscale.dev>", "Pawel Budzianowski <pawel@kscale.dev>", "Benjamin Bolte <ben@kscale.dev>"]
+edition = "2021"
 description = "Actuator package"
-authors = ["K-Scale Labs <ben@kscale.dev>"]
-repository = "https://github.com/kscalelabs/actuator"
 license = "MIT"
+repository = "https://github.com/kscalelabs/actuator"
+documentation = "https://docs.kscale.dev/software/actuators/overview"
 readme = "README.md"
