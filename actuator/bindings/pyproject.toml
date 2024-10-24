@@ -6,6 +6,5 @@ build-backend = "maturin"
 name = "bindings"
 requires-python = ">=3.9"
 
-
 [project.optional-dependencies]
 test = ["pytest", "pyright", "ruff"]

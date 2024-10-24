@@ -1,4 +1,5 @@
 [package]
+
 name = "bindings"
 version.workspace = true
 edition.workspace = true
@@ -9,10 +10,12 @@ license.workspace = true
 readme.workspace = true
 
 [lib]
+
 name = "bindings"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+
 pyo3 = { version = ">= 0.21.0", features = ["extension-module"] }
 pyo3-stub-gen = ">= 0.6.0"
 tokio = { version = "1.28.0", features = ["full"] }
