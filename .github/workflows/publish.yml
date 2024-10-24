@@ -58,6 +58,11 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
       - name: Cache Cargo registry
         uses: actions/cache@v2
         with:
