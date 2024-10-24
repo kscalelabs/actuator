@@ -1,0 +1,35 @@
+[package]
+
+name = "robstride"
+readme = "README.md"
+version = "0.1.1"
+description = "Robstride crate"
+
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+
+name = "robstride"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+serialport = "^4.5.1"
+ctrlc = "^3.4.5"
+lazy_static = "^1.4.0"
+spin_sleep = "^1.2.1"
+nix = "^0.26.2"
+log = "^0.4.22"
+
+[[bin]]
+
+name = "motors"
+path = "src/bin/motors.rs"
+
+[dependencies.clap]
+
+version = "4.3"
+features = ["derive"]
