@@ -2,9 +2,9 @@
 
 name = "robstride"
 readme = "README.md"
-version = "0.1.1"
-description = "Robstride crate"
+description = "Interface for controlling actuators built by Robstride"
 
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
