@@ -47,6 +47,24 @@ lazy_static! {
     pub static ref ROBSTRIDE_CONFIGS: HashMap<MotorType, MotorConfig> = {
         let mut m = HashMap::new();
         m.insert(
+            MotorType::Type00,
+            MotorConfig {
+                p_min: -12.5,
+                p_max: 12.5,
+                v_min: -33.0,
+                v_max: 33.0,
+                kp_min: 0.0,
+                kp_max: 500.0,
+                kd_min: 0.0,
+                kd_max: 5.0,
+                t_min: -14.0,
+                t_max: 14.0,
+                zero_on_init: false,
+                can_timeout_command: 0x200b, // Unchecked
+                can_timeout_factor: 12000.0, // Unchecked
+            },
+        );
+        m.insert(
             MotorType::Type01,
             MotorConfig {
                 p_min: -12.5,
@@ -64,7 +82,6 @@ lazy_static! {
                 can_timeout_factor: 12000.0,
             },
         );
-        // This is probably not correct, the Type02 is not released yet.
         m.insert(
             MotorType::Type02,
             MotorConfig {
@@ -79,8 +96,8 @@ lazy_static! {
                 t_min: -12.0,
                 t_max: 12.0,
                 zero_on_init: false,
-                can_timeout_command: 0x200b,
-                can_timeout_factor: 12000.0,
+                can_timeout_command: 0x200b, // Unchecked
+                can_timeout_factor: 12000.0, // Unchecked
             },
         );
         m.insert(
@@ -387,6 +404,7 @@ fn unpack_raw_feedback(pack: &CanPack) -> MotorFeedbackRaw {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MotorType {
+    Type00,
     Type01,
     Type02,
     Type03,
@@ -408,6 +426,7 @@ pub fn motor_mode_from_str(s: &str) -> Result<MotorMode, std::io::Error> {
 
 pub fn motor_type_from_str(s: &str) -> Result<MotorType, std::io::Error> {
     match s {
+        "00" => Ok(MotorType::Type00),
         "01" => Ok(MotorType::Type01),
         "02" => Ok(MotorType::Type02),
         "03" => Ok(MotorType::Type03),

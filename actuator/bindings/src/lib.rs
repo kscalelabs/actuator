@@ -474,20 +474,23 @@ impl PartialEq for PyRobstrideMotorType {
 #[pymethods]
 impl PyRobstrideMotorType {
     #[classattr]
-    const TYPE01: Self = PyRobstrideMotorType { value: 0 };
+    const TYPE00: Self = PyRobstrideMotorType { value: 0 };
     #[classattr]
-    const TYPE02: Self = PyRobstrideMotorType { value: 1 };
+    const TYPE01: Self = PyRobstrideMotorType { value: 1 };
     #[classattr]
-    const TYPE03: Self = PyRobstrideMotorType { value: 2 };
+    const TYPE02: Self = PyRobstrideMotorType { value: 2 };
     #[classattr]
-    const TYPE04: Self = PyRobstrideMotorType { value: 3 };
+    const TYPE03: Self = PyRobstrideMotorType { value: 3 };
+    #[classattr]
+    const TYPE04: Self = PyRobstrideMotorType { value: 4 };
 
     fn __repr__(&self) -> PyResult<String> {
         let type_name = match self.value {
-            0 => "TYPE01",
-            1 => "TYPE02",
-            2 => "TYPE03",
-            3 => "TYPE04",
+            0 => "TYPE00",
+            1 => "TYPE01",
+            2 => "TYPE02",
+            3 => "TYPE03",
+            4 => "TYPE04",
             _ => "Unknown",
         };
         Ok(format!("PyRobstrideMotorType::{}", type_name))
@@ -515,6 +518,7 @@ impl PyRobstrideMotorType {
 impl From<RobstrideMotorType> for PyRobstrideMotorType {
     fn from(motor_type: RobstrideMotorType) -> Self {
         match motor_type {
+            RobstrideMotorType::Type00 => PyRobstrideMotorType::TYPE00,
             RobstrideMotorType::Type01 => PyRobstrideMotorType::TYPE01,
             RobstrideMotorType::Type02 => PyRobstrideMotorType::TYPE02,
             RobstrideMotorType::Type03 => PyRobstrideMotorType::TYPE03,
@@ -526,10 +530,11 @@ impl From<RobstrideMotorType> for PyRobstrideMotorType {
 impl From<PyRobstrideMotorType> for RobstrideMotorType {
     fn from(py_motor_type: PyRobstrideMotorType) -> Self {
         match py_motor_type.value {
-            0 => RobstrideMotorType::Type01,
-            1 => RobstrideMotorType::Type02,
-            2 => RobstrideMotorType::Type03,
-            3 => RobstrideMotorType::Type04,
+            0 => RobstrideMotorType::Type00,
+            1 => RobstrideMotorType::Type01,
+            2 => RobstrideMotorType::Type02,
+            3 => RobstrideMotorType::Type03,
+            4 => RobstrideMotorType::Type04,
             _ => RobstrideMotorType::Type04,
         }
     }
