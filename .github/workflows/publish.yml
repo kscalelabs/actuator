@@ -47,7 +47,7 @@ jobs:
           CIBW_SKIP: "pp* *-musllinux*"  # Skip PyPy and musllinux builds
           CIBW_BEFORE_ALL: |
             if [ "${{ runner.os }}" == "Linux" ]; then
-              apt-get install -y libudev-dev pkg-config
+              sudo apt-get install -y libudev-dev pkg-config
             elif [ "${{ runner.os }}" == "macOS" ]; then
               brew install openssl pkg-config
             else
