@@ -66,6 +66,6 @@ setup(
     install_requires=requirements,
     extras_require={"dev": requirements_dev},
     include_package_data=True,
-    packages=find_packages(include=["actuator"]),
+    packages=["actuator"],
     cmdclass={"build_ext": RustBuildExt},
 )
