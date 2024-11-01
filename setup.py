@@ -2,7 +2,9 @@
 #!/usr/bin/env python
 """Setup script for the project."""
 
+import os
 import re
+import shutil
 import subprocess
 
 from setuptools import find_packages, setup
@@ -29,7 +31,17 @@ version: str = version_re.group(1)
 
 class RustBuildExt(build_ext):
     def run(self) -> None:
+        # Generate the stub file
         subprocess.run(["cargo", "run", "--bin", "stub_gen"], check=True)
+
+        # Move the generated stub file to parent directory
+        src_file = "actuator/bindings/bindings.pyi"
+        dst_file = "actuator/bindings.pyi"
+        if os.path.exists(src_file) and not os.path.exists(dst_file):
+            shutil.move(src_file, dst_file)
+        if not os.path.exists(dst_file):
+            raise RuntimeError(f"Failed to generate {dst_file}")
+
         super().run()
 
 
