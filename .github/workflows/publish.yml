@@ -45,10 +45,7 @@ jobs:
       - name: Build package
         env:
           CIBW_SKIP: "pp* *-musllinux*"  # Skip PyPy and musllinux builds
-          CIBW_BEFORE_BUILD: |
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            source $HOME/.cargo/env
-            pip install setuptools-rust
+          CIBW_BEFORE_ALL: |
             if [ "${{ runner.os }}" == "Linux" ]; then
               apt-get install -y libudev-dev pkg-config
             elif [ "${{ runner.os }}" == "macOS" ]; then
@@ -57,6 +54,10 @@ jobs:
               echo "Unsupported OS: ${{ runner.os }}"
               exit 1
             fi
+          CIBW_BEFORE_BUILD: |
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            source $HOME/.cargo/env
+            pip install setuptools-rust
           CIBW_ENVIRONMENT: |
             PATH="/usr/local/bin:$HOME/.cargo/bin:$PATH"
             CARGO_NET_GIT_FETCH_WITH_CLI=true
