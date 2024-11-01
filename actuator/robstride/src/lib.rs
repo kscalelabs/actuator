@@ -1,5 +1,6 @@
 use log::{error, info};
 use nix;
+use serde::{Deserialize, Serialize};
 use serialport::TTYPort;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
@@ -26,7 +27,7 @@ pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::
 #[cfg(target_os = "macos")]
 pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B115200;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MotorConfig {
     pub p_min: f32,
     pub p_max: f32,
@@ -141,7 +142,7 @@ lazy_static! {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CanComMode {
     AnnounceDevId = 0,
     MotorCtrl,
@@ -169,7 +170,7 @@ pub enum CanComMode {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub enum MotorMode {
     #[default]
     Reset = 0,
@@ -178,7 +179,7 @@ pub enum MotorMode {
     Brake,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum RunMode {
     UnsetMode = -1,
     MitMode = 0,
@@ -189,7 +190,7 @@ pub enum RunMode {
     CspPositionMode = 5,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExId {
     pub id: u8,
     pub data: u16,
@@ -197,14 +198,14 @@ pub struct ExId {
     pub res: u8,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanPack {
     pub ex_id: ExId,
     pub len: u8,
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MotorFeedback {
     pub can_id: u8,
     pub position: f32,
@@ -214,7 +215,7 @@ pub struct MotorFeedback {
     pub faults: u16,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MotorFeedbackRaw {
     pub can_id: u8,
     pub pos_int: u16,
@@ -402,7 +403,7 @@ fn unpack_raw_feedback(pack: &CanPack) -> MotorFeedbackRaw {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MotorType {
     Type00,
     Type01,
@@ -438,7 +439,7 @@ pub fn motor_type_from_str(s: &str) -> Result<MotorType, std::io::Error> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MotorControlParams {
     pub position: f32,
     pub velocity: f32,
