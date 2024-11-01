@@ -1,7 +1,5 @@
 """Defines the top-level API for the actuator package."""
 
-__version__ = "0.0.25"
-
 from .bindings import (
     PyRobstrideMotorConfig as RobstrideMotorConfig,
     PyRobstrideMotorControlParams as RobstrideMotorControlParams,
@@ -9,4 +7,7 @@ from .bindings import (
     PyRobstrideMotors as RobstrideMotors,
     PyRobstrideMotorsSupervisor as RobstrideMotorsSupervisor,
     PyRobstrideMotorType as RobstrideMotorType,
+    get_version,
 )
+
+__version__ = get_version()
