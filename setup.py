@@ -41,6 +41,8 @@ class RustBuildExt(build_ext):
             shutil.move(src_file, dst_file)
         if not os.path.exists(dst_file):
             raise RuntimeError(f"Failed to generate {dst_file}")
+        if os.path.exists(src_file):
+            os.remove(src_file)
 
         super().run()
 
