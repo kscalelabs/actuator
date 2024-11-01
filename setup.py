@@ -29,9 +29,7 @@ version: str = version_re.group(1)
 
 class RustBuildExt(build_ext):
     def run(self) -> None:
-        # Run the stub generator
         subprocess.run(["cargo", "run", "--bin", "stub_gen"], check=True)
-        # Call the original build_ext command
         super().run()
 
 
