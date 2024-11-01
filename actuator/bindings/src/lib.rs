@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 use robstride::{
     motor_mode_from_str as robstride_motor_mode_from_str,
     motor_type_from_str as robstride_motor_type_from_str, MotorConfig as RobstrideMotorConfig,
@@ -10,6 +10,12 @@ use robstride::{
 };
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+
+#[pyfunction]
+#[gen_stub_pyfunction]
+fn get_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
 
 #[gen_stub_pyclass]
 #[pyclass]
@@ -542,6 +548,7 @@ impl From<PyRobstrideMotorType> for RobstrideMotorType {
 
 #[pymodule]
 fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_class::<PyRobstrideMotors>()?;
     m.add_class::<PyRobstrideMotorFeedback>()?;
     m.add_class::<PyRobstrideMotorsSupervisor>()?;

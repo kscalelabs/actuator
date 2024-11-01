@@ -2,7 +2,6 @@
 #!/usr/bin/env python
 """Setup script for the project."""
 
-import glob
 import re
 import subprocess
 
@@ -22,15 +21,10 @@ with open("actuator/requirements-dev.txt", "r", encoding="utf-8") as f:
     requirements_dev: list[str] = f.read().splitlines()
 
 
-with open("actuator/__init__.py", "r", encoding="utf-8") as fh:
-    version_re = re.search(r"^__version__ = \"([^\"]*)\"", fh.read(), re.MULTILINE)
-assert version_re is not None, "Could not find version in actuator/__init__.py"
+with open("Cargo.toml", "r", encoding="utf-8") as fh:
+    version_re = re.search(r"^version = \"([^\"]*)\"", fh.read(), re.MULTILINE)
+assert version_re is not None, "Could not find version in Cargo.toml"
 version: str = version_re.group(1)
-
-package_data = [f"actuator/{name}" for name in ("py.typed", "requirements.txt", "requirements-dev.txt")]
-package_data.append("Cargo.toml")
-for ext in ("pyi", "rs", "toml", "so"):
-    package_data.extend(glob.iglob(f"actuator/**/*.{ext}", recursive=True))
 
 
 class RustBuildExt(build_ext):
@@ -62,7 +56,6 @@ setup(
     install_requires=requirements,
     extras_require={"dev": requirements_dev},
     include_package_data=True,
-    package_data={"actuator": package_data},
     packages=find_packages(include=["actuator"]),
     cmdclass={"build_ext": RustBuildExt},
 )
