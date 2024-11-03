@@ -931,6 +931,7 @@ pub struct MotorsSupervisor {
     max_update_rate: Arc<RwLock<f64>>,
     actual_update_rate: Arc<RwLock<f64>>,
     serial: Arc<RwLock<bool>>,
+    safe_mode: Arc<RwLock<bool>>,
 }
 
 impl MotorsSupervisor {
@@ -940,6 +941,7 @@ impl MotorsSupervisor {
         verbose: bool,
         max_update_rate: f64,
         zero_on_init: bool,
+        safe_mode: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Motors
         let motors = Motors::new(port_name, motor_infos, verbose)?;
@@ -973,7 +975,7 @@ impl MotorsSupervisor {
         let motor_ids: Vec<u8> = motor_infos.keys().cloned().collect();
         let total_commands = 0;
         let failed_commands = motor_ids.iter().map(|&id| (id, 0)).collect();
-
+g
         let controller = MotorsSupervisor {
             motors: Arc::new(Mutex::new(motors)),
             target_params: Arc::new(RwLock::new(target_params)),
@@ -987,6 +989,7 @@ impl MotorsSupervisor {
             max_update_rate: Arc::new(RwLock::new(max_update_rate)),
             actual_update_rate: Arc::new(RwLock::new(0.0)),
             serial: Arc::new(RwLock::new(true)),
+            safe_mode: Arc::new(RwLock::new(safe_mode)),
         };
 
         controller.start_control_thread();
@@ -1007,6 +1010,7 @@ impl MotorsSupervisor {
         let max_update_rate = Arc::clone(&self.max_update_rate);
         let actual_update_rate = Arc::clone(&self.actual_update_rate);
         let serial = Arc::clone(&self.serial);
+        let safe_mode = Arc::clone(&self.safe_mode);
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
