@@ -16,6 +16,8 @@ struct Args {
     max_update_rate: f64,
     #[arg(long, help = "Zero on init", default_value_t = false)]
     zero_on_init: bool,
+    #[arg(long, help = "Safe mode", default_value_t = false)]
+    safe_mode: bool,
 }
 
 fn sinusoid(
@@ -93,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.verbose,
         args.max_update_rate,
         args.zero_on_init,
+        args.safe_mode,
     )?;
 
     println!("Motor Controller Test CLI");

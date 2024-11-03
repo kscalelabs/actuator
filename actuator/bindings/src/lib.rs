@@ -230,13 +230,14 @@ struct PyRobstrideMotorsSupervisor {
 #[pymethods]
 impl PyRobstrideMotorsSupervisor {
     #[new]
-    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0, zero_on_init = false))]
+    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0, zero_on_init = false, safe_mode = false))]
     fn new(
         port_name: String,
         motor_infos: HashMap<u8, String>,
         verbose: bool,
         target_update_rate: f64,
         zero_on_init: bool,
+        safe_mode: bool,
     ) -> PyResult<Self> {
         let motor_infos = motor_infos
             .into_iter()
@@ -252,6 +253,7 @@ impl PyRobstrideMotorsSupervisor {
             verbose,
             target_update_rate,
             zero_on_init,
+            safe_mode,
         )
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 

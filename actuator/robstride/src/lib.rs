@@ -440,6 +440,11 @@ pub fn motor_type_from_str(s: &str) -> Result<MotorType, std::io::Error> {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct MotorSdoParams {
+    pub torque_limit: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MotorControlParams {
     pub position: f32,
     pub velocity: f32,
@@ -679,6 +684,31 @@ impl Motors {
     pub fn zero_motors(&mut self, motor_ids: &[u8]) -> Result<(), std::io::Error> {
         self.send_zero_torque(motor_ids)?;
         self.send_set_zeros(Some(motor_ids))?;
+        Ok(())
+    }
+
+    fn set_torque_limit(&mut self, motor_id: u8, torque_limit: f32) -> Result<(), std::io::Error> {
+        let config = *self.motor_configs.get(&motor_id).ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Motor not found",
+        ))?;
+
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: motor_id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::SdoWrite,
+                res: 0,
+            },
+            len: 8,
+            data: vec![0; 8],
+        };
+        let index: u16 = 0x700b;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+
+        let torque_limit_int = float_to_uint(torque_limit, config.t_min, config.t_max, 16);
+        pack.data[4..8].copy_from_slice(&torque_limit_int.to_le_bytes());
+        self.send_command(&pack, true)?;
         Ok(())
     }
 
@@ -924,6 +954,7 @@ pub struct MotorsSupervisor {
     running: Arc<RwLock<bool>>,
     latest_feedback: Arc<RwLock<HashMap<u8, MotorFeedback>>>,
     motors_to_zero: Arc<Mutex<HashSet<u8>>>,
+    motors_to_set_sdo: Arc<Mutex<HashMap<u8, MotorSdoParams>>>,
     paused: Arc<RwLock<bool>>,
     restart: Arc<Mutex<bool>>,
     total_commands: Arc<RwLock<u64>>,
@@ -975,13 +1006,14 @@ impl MotorsSupervisor {
         let motor_ids: Vec<u8> = motor_infos.keys().cloned().collect();
         let total_commands = 0;
         let failed_commands = motor_ids.iter().map(|&id| (id, 0)).collect();
-g
+
         let controller = MotorsSupervisor {
             motors: Arc::new(Mutex::new(motors)),
             target_params: Arc::new(RwLock::new(target_params)),
             running: Arc::new(RwLock::new(true)),
             latest_feedback: Arc::new(RwLock::new(HashMap::new())),
             motors_to_zero: Arc::new(Mutex::new(zero_on_init_motors)),
+            motors_to_set_sdo: Arc::new(Mutex::new(HashMap::new())),
             paused: Arc::new(RwLock::new(false)),
             restart: Arc::new(Mutex::new(false)),
             total_commands: Arc::new(RwLock::new(total_commands)),
@@ -1011,6 +1043,7 @@ g
         let actual_update_rate = Arc::clone(&self.actual_update_rate);
         let serial = Arc::clone(&self.serial);
         let safe_mode = Arc::clone(&self.safe_mode);
+        let motors_to_set_sdo = Arc::clone(&self.motors_to_set_sdo);
 
         thread::spawn(move || {
             let mut motors = motors.lock().unwrap();
@@ -1067,6 +1100,17 @@ g
                         let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
                         let _ = motors.zero_motors(&motor_ids);
                         motor_ids_to_zero.clear();
+                    }
+                }
+
+                {
+                    // Send SDO commands to motors.
+                    let mut motors_to_set_sdo = motors_to_set_sdo.lock().unwrap();
+                    if !motors_to_set_sdo.is_empty() {
+                        for (motor_id, params) in motors_to_set_sdo.iter_mut() {
+                            motors.set_torque_limit(*motor_id, params.torque_limit).unwrap();
+                        }
+                        motors_to_set_sdo.clear();
                     }
                 }
 
@@ -1284,6 +1328,11 @@ g
                     format!("Motor ID {} not found", motor_id),
                 )
             })
+    }
+
+    pub fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> Result<(), std::io::Error> {
+        let mut motors = self.motors.lock().unwrap();
+        motors.set_torque_limit(motor_id, torque_limit)
     }
 
     pub fn add_motor_to_zero(&self, motor_id: u8) -> Result<(), std::io::Error> {
