@@ -1331,8 +1331,9 @@ impl MotorsSupervisor {
     }
 
     pub fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> Result<(), std::io::Error> {
-        let mut motors = self.motors.lock().unwrap();
-        motors.set_torque_limit(motor_id, torque_limit)
+        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
+        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit });
+        Ok(())
     }
 
     pub fn add_motor_to_zero(&self, motor_id: u8) -> Result<(), std::io::Error> {
