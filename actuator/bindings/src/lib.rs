@@ -326,6 +326,12 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
+    fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> PyResult<()> {
+        self.inner
+            .set_torque_limit(motor_id, torque_limit)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
     fn get_latest_feedback(&self) -> HashMap<u8, PyRobstrideMotorFeedback> {
         self.inner
             .get_latest_feedback()
