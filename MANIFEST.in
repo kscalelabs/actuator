@@ -1,2 +1,2 @@
 include Cargo.toml
-recursive-include actuator/ *.rs *.pyi *.so *.py *.txt Cargo.toml py.typed
+recursive-include actuator/ *.rs *.pyi *.so *.py *.txt *.md *.toml py.typed
