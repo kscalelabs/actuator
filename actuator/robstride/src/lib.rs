@@ -1,19 +1,15 @@
 mod can;
 mod config;
 mod motor;
+mod port;
 mod supervisor;
 mod types;
 
 pub use can::{CanComMode, CanPack, ExId};
 pub use config::{MotorConfig, ROBSTRIDE_CONFIGS};
-pub use motor::{Motor, MotorControlParams, MotorFeedback, MotorFeedbackRaw, Motors};
+pub use motor::{MotorControlParams, MotorFeedback, Motors};
 pub use supervisor::MotorsSupervisor;
-pub use types::{MotorMode, MotorType, RunMode};
-
-pub const CAN_ID_MASTER: u8 = 0x00;
-pub const CAN_ID_MOTOR_DEFAULT: u8 = 0x7F;
-pub const CAN_ID_BROADCAST: u8 = 0xFE;
-pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
+pub use types::{motor_type_from_str, MotorMode, MotorType, RunMode};
 
 #[cfg(target_os = "linux")]
 pub const BAUD_RATE: nix::sys::termios::BaudRate = nix::sys::termios::BaudRate::B921600;

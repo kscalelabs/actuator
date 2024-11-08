@@ -4,7 +4,8 @@ use std::thread;
 use std::time::Duration;
 
 use crate::motor::{MotorControlParams, MotorFeedback, Motors};
-use crate::types::MotorType;
+use crate::types::{MotorType, RunMode};
+use log::{error, info};
 
 pub struct MotorsSupervisor {
     motors: Arc<Mutex<Motors>>,

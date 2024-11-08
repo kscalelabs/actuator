@@ -1,11 +1,19 @@
+use crate::can::{float_to_uint, rx_unpack, tx_packs, uint_to_float, unpack_raw_feedback, ExId};
+use crate::can::{CanComMode, CanPack};
+use crate::config::MotorConfig;
+use crate::config::ROBSTRIDE_CONFIGS;
+use crate::port::init_serial_port;
+use crate::types::{MotorMode, MotorType, RunMode};
 use serde::{Deserialize, Serialize};
 use serialport::TTYPort;
 use std::collections::HashMap;
-use std::io;
+use std::thread;
+use std::time::Duration;
 
-use crate::can::{CanComMode, CanPack};
-use crate::config::MotorConfig;
-use crate::types::{MotorMode, MotorType, RunMode};
+pub const CAN_ID_MASTER: u8 = 0x00;
+pub const CAN_ID_MOTOR_DEFAULT: u8 = 0x7F;
+pub const CAN_ID_BROADCAST: u8 = 0xFE;
+pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MotorControlParams {
@@ -14,6 +22,18 @@ pub struct MotorControlParams {
     pub kp: f32,
     pub kd: f32,
     pub torque: f32,
+}
+
+impl Default for MotorControlParams {
+    fn default() -> Self {
+        MotorControlParams {
+            position: 0.0,
+            velocity: 0.0,
+            kp: 0.0,
+            kd: 0.0,
+            torque: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -26,22 +46,12 @@ pub struct MotorFeedback {
     pub faults: u16,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct MotorFeedbackRaw {
-    pub can_id: u8,
-    pub pos_int: u16,
-    pub vel_int: u16,
-    pub torque_int: u16,
-    pub mode: MotorMode,
-    pub faults: u16,
-}
-
 pub struct Motors {
-    port: TTYPort,
-    motor_configs: HashMap<u8, &'static MotorConfig>,
-    mode: RunMode,
-    sleep_time: Duration,
-    verbose: bool,
+    pub port: TTYPort,
+    pub motor_configs: HashMap<u8, &'static MotorConfig>,
+    pub mode: RunMode,
+    pub sleep_time: Duration,
+    pub verbose: bool,
 }
 
 impl Motors {
@@ -158,7 +168,7 @@ impl Motors {
         Ok(modes)
     }
 
-    fn send_set_mode(
+    pub fn send_set_mode(
         &mut self,
         mode: RunMode,
     ) -> Result<HashMap<u8, MotorFeedback>, std::io::Error> {
