@@ -10,9 +10,6 @@ use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 
-pub const CAN_ID_MASTER: u8 = 0x00;
-pub const CAN_ID_MOTOR_DEFAULT: u8 = 0x7F;
-pub const CAN_ID_BROADCAST: u8 = 0xFE;
 pub const CAN_ID_DEBUG_UI: u8 = 0xFD;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
