@@ -53,14 +53,11 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             source $HOME/.cargo/env
             pip install setuptools-rust
+            python setup.py sdist
           CIBW_ENVIRONMENT: |
             PATH="/usr/local/bin:$HOME/.cargo/bin:$PATH"
             CARGO_NET_GIT_FETCH_WITH_CLI=true
         run: cibuildwheel --output-dir dist
-
-      - name: Build sdist
-        run: python setup.py sdist
-        shell: bash
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
