@@ -75,20 +75,21 @@ jobs:
 
   publish-wheels:
     needs: publish-python
-    name: Publish Python wheels
+    name: Publish Python wheels and sdist
     timeout-minutes: 10
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download all wheels
+      - name: Download all artifacts
         uses: actions/download-artifact@v3
         with:
           path: dist
 
-      - name: Move wheels to dist directory
+      - name: Move artifacts to dist directory
         run: |
           mkdir -p final_dist
           find dist -name "*.whl" -exec mv {} final_dist/ \;
+          find dist -name "*.tar.gz" -exec mv {} final_dist/ \;
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
