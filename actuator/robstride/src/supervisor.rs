@@ -158,17 +158,17 @@ impl MotorsSupervisor {
                     }
                 }
 
-                // {
-                //     // Send updated sdo parameters to motors that need them.
-                //     let mut motors_to_set_sdo = motors_to_set_sdo.lock().unwrap();
-                //     if !motors_to_set_sdo.is_empty() {
-                //         for (motor_id, params) in motors_to_set_sdo.iter_mut() {
-                //             motors.set_torque_limit(*motor_id, params.torque_limit).unwrap();
-                //             // Any other sdo parameters can be updated here.
-                //         }
-                //         motors_to_set_sdo.clear();
-                //     }
-                // }
+                {
+                    // Send updated sdo parameters to motors that need them.
+                    let mut motors_to_set_sdo = motors_to_set_sdo.lock().unwrap();
+                    if !motors_to_set_sdo.is_empty() {
+                        for (motor_id, params) in motors_to_set_sdo.iter_mut() {
+                            motors.set_torque_limit(*motor_id, params.torque_limit).unwrap();
+                            // Any other sdo parameters can be updated here.
+                        }
+                        motors_to_set_sdo.clear();
+                    }
+                }
 
                 {
                     let params_copy = {
