@@ -377,20 +377,6 @@ impl PyRobstrideMotorsSupervisor {
         ))
     }
 
-    fn set_params(&self, motor_id: u8, params: &PyRobstrideMotorControlParams) -> PyResult<()> {
-        self.inner.set_params(
-            motor_id,
-            RobstrideMotorControlParams {
-                position: params.position,
-                velocity: params.velocity,
-                kp: params.kp,
-                kd: params.kd,
-                torque: params.torque,
-            },
-        );
-        Ok(())
-    }
-
     #[getter]
     fn total_commands(&self) -> PyResult<u64> {
         Ok(self.inner.get_total_commands())
