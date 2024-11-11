@@ -56,13 +56,18 @@ jobs:
           CIBW_ENVIRONMENT: |
             PATH="/usr/local/bin:$HOME/.cargo/bin:$PATH"
             CARGO_NET_GIT_FETCH_WITH_CLI=true
+          CIBW_BUILD_COMMAND: |
+            python -m pip install build
+            python -m build --sdist
         run: cibuildwheel --output-dir dist
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v3
         with:
           name: wheels-${{ matrix.os }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
 
   publish-wheels:
     needs: publish-python
@@ -80,6 +85,7 @@ jobs:
         run: |
           mkdir -p final_dist
           find dist -name "*.whl" -exec mv {} final_dist/ \;
+          find dist -name "*.tar.gz" -exec mv {} final_dist/ \;
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
