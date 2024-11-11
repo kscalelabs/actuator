@@ -345,6 +345,12 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
+    fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> PyResult<f32> {
+        self.inner
+            .set_torque_limit(motor_id, torque_limit)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
     fn add_motor_to_zero(&self, motor_id: u8) -> PyResult<()> {
         self.inner
             .add_motor_to_zero(motor_id)

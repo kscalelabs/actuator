@@ -34,6 +34,11 @@ impl Default for MotorControlParams {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct MotorSdoParams {
+    pub torque_limit: f32,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MotorFeedback {
     pub can_id: u8,
     pub position: f32,
@@ -340,6 +345,31 @@ impl Motors {
             println!("CAN timeout set to {}", new_timeout);
         }
 
+        Ok(())
+    }
+
+    pub fn set_torque_limit(&mut self, motor_id: u8, torque_limit: f32) -> Result<(), std::io::Error> {
+        let config = *self.motor_configs.get(&motor_id).ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Motor not found",
+        ))?;
+
+        let mut pack = CanPack {
+            ex_id: ExId {
+                id: motor_id,
+                data: CAN_ID_DEBUG_UI as u16,
+                mode: CanComMode::SdoWrite,
+                res: 0,
+            },
+            len: 8,
+            data: vec![0; 8],
+        };
+        let index: u16 = 0x700b;
+        pack.data[..2].copy_from_slice(&index.to_le_bytes());
+
+        let torque_limit_int = float_to_uint(torque_limit, config.t_min, config.t_max, 16);
+        pack.data[4..8].copy_from_slice(&torque_limit_int.to_le_bytes());
+        self.send_command(&pack, true)?;
         Ok(())
     }
 
