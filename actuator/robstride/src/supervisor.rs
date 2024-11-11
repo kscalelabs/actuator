@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use crate::motor::{MotorControlParams, MotorFeedback, Motors};
+use crate::motor::{MotorControlParams, MotorFeedback, MotorSdoParams, Motors};
 use crate::types::{MotorType, RunMode};
 use log::{error, info};
 
@@ -13,6 +13,7 @@ pub struct MotorsSupervisor {
     running: Arc<RwLock<bool>>,
     latest_feedback: Arc<RwLock<HashMap<u8, MotorFeedback>>>,
     motors_to_zero: Arc<Mutex<HashSet<u8>>>,
+    motors_to_set_sdo: Arc<Mutex<HashMap<u8, MotorSdoParams>>>,
     paused: Arc<RwLock<bool>>,
     restart: Arc<Mutex<bool>>,
     total_commands: Arc<RwLock<u64>>,
@@ -69,6 +70,7 @@ impl MotorsSupervisor {
             running: Arc::new(RwLock::new(true)),
             latest_feedback: Arc::new(RwLock::new(HashMap::new())),
             motors_to_zero: Arc::new(Mutex::new(zero_on_init_motors)),
+            motors_to_set_sdo: Arc::new(Mutex::new(HashMap::new())),
             paused: Arc::new(RwLock::new(false)),
             restart: Arc::new(Mutex::new(false)),
             total_commands: Arc::new(RwLock::new(total_commands)),
@@ -91,6 +93,7 @@ impl MotorsSupervisor {
         let motors_to_zero = Arc::clone(&self.motors_to_zero);
         let paused = Arc::clone(&self.paused);
         let restart = Arc::clone(&self.restart);
+        let motors_to_set_sdo = Arc::clone(&self.motors_to_set_sdo);
         let total_commands = Arc::clone(&self.total_commands);
         let failed_commands = Arc::clone(&self.failed_commands);
         let max_update_rate = Arc::clone(&self.max_update_rate);
@@ -152,6 +155,18 @@ impl MotorsSupervisor {
                         let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
                         let _ = motors.zero_motors(&motor_ids);
                         motor_ids_to_zero.clear();
+                    }
+                }
+
+                {
+                    // Send updated sdo parameters to motors that need them.
+                    let mut motors_to_set_sdo = motors_to_set_sdo.lock().unwrap();
+                    if !motors_to_set_sdo.is_empty() {
+                        for (motor_id, params) in motors_to_set_sdo.iter_mut() {
+                            motors.set_torque_limit(*motor_id, params.torque_limit).unwrap();
+                            // Any other sdo parameters can be updated here.
+                        }
+                        motors_to_set_sdo.clear();
                     }
                 }
 
@@ -372,6 +387,12 @@ impl MotorsSupervisor {
                     format!("Motor ID {} not found", motor_id),
                 )
             })
+    }
+
+    pub fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> Result<f32, std::io::Error> {
+        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
+        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit });
+        Ok(torque_limit)
     }
 
     pub fn set_torque(&self, motor_id: u8, torque: f32) -> Result<f32, std::io::Error> {
