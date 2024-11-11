@@ -33,9 +33,17 @@ impl Default for MotorControlParams {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MotorSdoParams {
     pub torque_limit: f32,
+}
+
+impl Default for MotorSdoParams {
+    fn default() -> Self {
+        MotorSdoParams {
+            torque_limit: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -364,11 +372,13 @@ impl Motors {
             len: 8,
             data: vec![0; 8],
         };
-        let index: u16 = 0x700b;
+        
+        let index: u16 = 0x700B;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
 
-        let torque_limit_int = float_to_uint(torque_limit, config.t_min, config.t_max, 16);
-        pack.data[4..8].copy_from_slice(&torque_limit_int.to_le_bytes());
+        let torque_limit_safe = torque_limit.clamp(config.t_min, config.t_max);
+        pack.data[4..8].copy_from_slice(&torque_limit_safe.to_le_bytes());
+
         self.send_command(&pack, true)?;
         Ok(())
     }
