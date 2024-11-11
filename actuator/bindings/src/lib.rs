@@ -258,6 +258,27 @@ impl PyRobstrideMotorsSupervisor {
         Ok(PyRobstrideMotorsSupervisor { inner: controller })
     }
 
+    fn set_all_params(&self, params: HashMap<u8, PyRobstrideMotorControlParams>) -> PyResult<()> {
+        let params: HashMap<u8, RobstrideMotorControlParams> = params
+            .into_iter()
+            .map(|(k, v)| (k, RobstrideMotorControlParams::from(v)))
+            .collect();
+        self.inner.set_all_params(params);
+        Ok(())
+    }
+
+    fn set_params(&self, motor_id: u8, params: PyRobstrideMotorControlParams) -> PyResult<()> {
+        self.inner
+            .set_params(motor_id, RobstrideMotorControlParams::from(params))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
+    fn set_positions(&self, positions: HashMap<u8, f32>) -> PyResult<()> {
+        self.inner
+            .set_positions(positions)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
     fn set_position(&self, motor_id: u8, position: f32) -> PyResult<f32> {
         self.inner
             .set_position(motor_id, position)
@@ -267,6 +288,12 @@ impl PyRobstrideMotorsSupervisor {
     fn get_position(&self, motor_id: u8) -> PyResult<f32> {
         self.inner
             .get_position(motor_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
+    fn set_velocities(&self, velocities: HashMap<u8, f32>) -> PyResult<()> {
+        self.inner
+            .set_velocities(velocities)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
@@ -348,20 +375,6 @@ impl PyRobstrideMotorsSupervisor {
             "PyRobstrideMotorsSupervisor(motor_count={})",
             motor_count
         ))
-    }
-
-    fn set_params(&self, motor_id: u8, params: &PyRobstrideMotorControlParams) -> PyResult<()> {
-        self.inner.set_params(
-            motor_id,
-            RobstrideMotorControlParams {
-                position: params.position,
-                velocity: params.velocity,
-                kp: params.kp,
-                kd: params.kd,
-                torque: params.torque,
-            },
-        );
-        Ok(())
     }
 
     #[getter]
