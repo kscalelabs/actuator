@@ -156,14 +156,17 @@ impl MotorsSupervisor {
                 }
 
                 {
-                    // Send PD commands to motors.
-                    let target_params = target_params.read().unwrap();
-                    if !target_params.is_empty() {
-                        match motors.send_motor_controls(&target_params, *serial.read().unwrap()) {
+                    let params_copy = {
+                        let target_params = target_params.read().unwrap();
+                        target_params.clone()
+                    };
+
+                    if !params_copy.is_empty() {
+                        match motors.send_motor_controls(&params_copy, *serial.read().unwrap()) {
                             Ok(feedbacks) => {
                                 let mut latest_feedback = latest_feedback.write().unwrap();
                                 let mut failed_commands = failed_commands.write().unwrap();
-                                for &motor_id in target_params.keys() {
+                                for &motor_id in params_copy.keys() {
                                     if let Some(feedback) = feedbacks.get(&motor_id) {
                                         latest_feedback.insert(motor_id, feedback.clone());
                                     } else {
@@ -236,9 +239,27 @@ impl MotorsSupervisor {
         *self.failed_commands.write().unwrap() = HashMap::new();
     }
 
-    pub fn set_params(&self, motor_id: u8, params: MotorControlParams) {
+    pub fn set_all_params(&self, params: HashMap<u8, MotorControlParams>) {
+        let mut target_params = self.target_params.write().unwrap();
+        *target_params = params;
+    }
+
+    pub fn set_params(
+        &self,
+        motor_id: u8,
+        params: MotorControlParams,
+    ) -> Result<(), std::io::Error> {
         let mut target_params = self.target_params.write().unwrap();
         target_params.insert(motor_id, params);
+        Ok(())
+    }
+
+    pub fn set_positions(&self, positions: HashMap<u8, f32>) -> Result<(), std::io::Error> {
+        let mut target_params = self.target_params.write().unwrap();
+        for (motor_id, position) in positions {
+            target_params.get_mut(&motor_id).unwrap().position = position;
+        }
+        Ok(())
     }
 
     pub fn set_position(&self, motor_id: u8, position: f32) -> Result<f32, std::io::Error> {
@@ -265,6 +286,14 @@ impl MotorsSupervisor {
                     format!("Motor ID {} not found", motor_id),
                 )
             })
+    }
+
+    pub fn set_velocities(&self, velocities: HashMap<u8, f32>) -> Result<(), std::io::Error> {
+        let mut target_params = self.target_params.write().unwrap();
+        for (motor_id, velocity) in velocities {
+            target_params.get_mut(&motor_id).unwrap().velocity = velocity;
+        }
+        Ok(())
     }
 
     pub fn set_velocity(&self, motor_id: u8, velocity: f32) -> Result<f32, std::io::Error> {
