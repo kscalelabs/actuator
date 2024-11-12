@@ -52,6 +52,21 @@ impl PyRobstrideMotors {
             .collect()
     }
 
+    fn set_torque_limit(&mut self, motor_id: u8, torque_limit: f32) -> PyResult<f32> {
+        self.inner.set_torque_limit(motor_id, torque_limit).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        Ok(torque_limit)
+    }
+
+    fn set_speed_limit(&mut self, motor_id: u8, speed_limit: f32) -> PyResult<f32> {
+        self.inner.set_speed_limit(motor_id, speed_limit).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        Ok(speed_limit)
+    }
+
+    fn set_current_limit(&mut self, motor_id: u8, current_limit: f32) -> PyResult<f32> {
+        self.inner.set_current_limit(motor_id, current_limit).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        Ok(current_limit)
+    }
+
     fn send_resets(&mut self) -> PyResult<()> {
         self.inner
             .send_resets()
@@ -348,6 +363,18 @@ impl PyRobstrideMotorsSupervisor {
     fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> PyResult<f32> {
         self.inner
             .set_torque_limit(motor_id, torque_limit)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
+    fn set_speed_limit(&self, motor_id: u8, speed_limit: f32) -> PyResult<f32> {
+        self.inner
+            .set_speed_limit(motor_id, speed_limit)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
+    fn set_current_limit(&self, motor_id: u8, current_limit: f32) -> PyResult<f32> {
+        self.inner
+            .set_current_limit(motor_id, current_limit)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 

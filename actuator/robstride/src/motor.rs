@@ -35,15 +35,9 @@ impl Default for MotorControlParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MotorSdoParams {
-    pub torque_limit: f32,
-}
-
-impl Default for MotorSdoParams {
-    fn default() -> Self {
-        MotorSdoParams {
-            torque_limit: 0.0,
-        }
-    }
+    pub torque_limit: Option<f32>,
+    pub speed_limit: Option<f32>,
+    pub current_limit: Option<f32>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -356,7 +350,7 @@ impl Motors {
         Ok(())
     }
 
-    pub fn write_sdo_param(&mut self, motor_id: u8, index: u16, value: f32) -> Result<(), std::io::Error> {
+    fn write_sdo_param(&mut self, motor_id: u8, index: u16, value: f32) -> Result<(), std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: motor_id,
@@ -376,6 +370,21 @@ impl Motors {
         Ok(())  
     }
 
+    // Set speed limit in rad/s
+    pub fn set_speed_limit(&mut self, motor_id: u8, speed_limit: f32) -> Result<(), std::io::Error> {
+        let index: u16 = 0x7017;
+        self.write_sdo_param(motor_id, index, speed_limit)?;
+        Ok(())
+    }
+
+    // Set current limit in A
+    pub fn set_current_limit(&mut self, motor_id: u8, current_limit: f32) -> Result<(), std::io::Error> {
+        let index: u16 = 0x7018;
+        self.write_sdo_param(motor_id, index, current_limit)?;
+        Ok(())
+    }
+
+    // Set torque limit in Nm
     pub fn set_torque_limit(&mut self, motor_id: u8, torque_limit: f32) -> Result<(), std::io::Error> {
         let index: u16 = 0x700B;
         // optionally clamp to min/max

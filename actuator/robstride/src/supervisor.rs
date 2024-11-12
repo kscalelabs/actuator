@@ -163,8 +163,15 @@ impl MotorsSupervisor {
                     let mut motors_to_set_sdo = motors_to_set_sdo.lock().unwrap();
                     if !motors_to_set_sdo.is_empty() {
                         for (motor_id, params) in motors_to_set_sdo.iter_mut() {
-                            motors.set_torque_limit(*motor_id, params.torque_limit).unwrap();
-                            // Any other sdo parameters can be updated here.
+                            if let Some(torque_limit) = params.torque_limit {
+                                motors.set_torque_limit(*motor_id, torque_limit).unwrap();
+                            }
+                            if let Some(speed_limit) = params.speed_limit {
+                                motors.set_speed_limit(*motor_id, speed_limit).unwrap();
+                            }
+                            if let Some(current_limit) = params.current_limit {
+                                motors.set_current_limit(*motor_id, current_limit).unwrap();
+                            }
                         }
                         motors_to_set_sdo.clear();
                     }
@@ -391,8 +398,20 @@ impl MotorsSupervisor {
 
     pub fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> Result<f32, std::io::Error> {
         let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
-        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit });
+        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit: Some(torque_limit), speed_limit: None, current_limit: None });
         Ok(torque_limit)
+    }
+
+    pub fn set_speed_limit(&self, motor_id: u8, speed_limit: f32) -> Result<f32, std::io::Error> {
+        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
+        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit: None, speed_limit: Some(speed_limit), current_limit: None });
+        Ok(speed_limit)
+    }
+
+    pub fn set_current_limit(&self, motor_id: u8, current_limit: f32) -> Result<f32, std::io::Error> {
+        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
+        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit: None, speed_limit: None, current_limit: Some(current_limit) });
+        Ok(current_limit)
     }
 
     pub fn set_torque(&self, motor_id: u8, torque: f32) -> Result<f32, std::io::Error> {
