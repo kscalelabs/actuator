@@ -65,7 +65,6 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: |
             dist/*.whl
-            dist/*.tar.gz
 
   build-source-dist:
     name: Build and publish Python package (source distribution)
