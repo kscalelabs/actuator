@@ -356,12 +356,7 @@ impl Motors {
         Ok(())
     }
 
-    pub fn set_torque_limit(&mut self, motor_id: u8, torque_limit: f32) -> Result<(), std::io::Error> {
-        let config = *self.motor_configs.get(&motor_id).ok_or(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Motor not found",
-        ))?;
-
+    pub fn write_sdo_param(&mut self, motor_id: u8, index: u16, value: f32) -> Result<(), std::io::Error> {
         let mut pack = CanPack {
             ex_id: ExId {
                 id: motor_id,
@@ -373,13 +368,18 @@ impl Motors {
             data: vec![0; 8],
         };
         
-        let index: u16 = 0x700B;
         pack.data[..2].copy_from_slice(&index.to_le_bytes());
 
-        let torque_limit_safe = torque_limit.clamp(config.t_min, config.t_max);
-        pack.data[4..8].copy_from_slice(&torque_limit_safe.to_le_bytes());
+        pack.data[4..8].copy_from_slice(&value.to_le_bytes());
 
         self.send_command(&pack, true)?;
+        Ok(())  
+    }
+
+    pub fn set_torque_limit(&mut self, motor_id: u8, torque_limit: f32) -> Result<(), std::io::Error> {
+        let index: u16 = 0x700B;
+        // optionally clamp to min/max
+        self.write_sdo_param(motor_id, index, torque_limit)?;
         Ok(())
     }
 
