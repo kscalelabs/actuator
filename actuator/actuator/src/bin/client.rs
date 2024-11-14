@@ -1,7 +1,7 @@
-use actuator::server::run_server;
+use actuator::client::run_dummy_client;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    run_server().await?;
+    run_dummy_client().await?;
     Ok(())
 }

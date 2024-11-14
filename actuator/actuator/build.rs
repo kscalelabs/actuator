@@ -2,25 +2,21 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let proto_root = "../proto";
+    let proto_root = "proto";
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let protos = [
         "actuator/common.proto",
-        "actuator/robstride.proto",
+        "google/longrunning/operations.proto",
     ];
 
-    tonic_build::configure()
-        .out_dir(out_dir)
-        .compile(&[proto_root], &[proto_root])
-        .unwrap();
+    let includes = [proto_root, &format!("{}/googleapis", proto_root)];
 
     std::fs::create_dir_all(out_dir.join("actuator")).expect("Failed to create actuator directory");
 
     tonic_build::configure()
         .build_server(true)
         .out_dir(out_dir.join("actuator"))
-        .protoc_arg("--experimental_allow_proto3_optional")
-        .compile(&protos, &includes)
+        .compile_protos(&protos, &includes)
         .expect("Failed to compile protos");
 
     for proto in protos {
