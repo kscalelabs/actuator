@@ -1,0 +1,36 @@
+[package]
+
+name = "actuator"
+build = "build.rs"
+readme = "README.md"
+description = "Actuator control service"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+
+pest = "^2.5"
+pest_derive = "^2.5"
+thiserror = "1.0"
+lazy_static = "^1.4.0"
+prost = "0.13"
+prost-types = "0.13"
+
+[build-dependencies]
+
+prost-build = "^0.13.3"
+
+[[bin]]
+
+name = "server"
+path = "src/bin/server.rs"
+
+[lib]
+
+name = "actuator"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package actuator.common;
+
+service ActuatorService {
+    rpc CommandActuators(CommandActuatorsRequest) returns (CommandActuatorsResponse) {}
+}
+
+message ActuatorCommand {
+    uint32 actuator_id = 1;
+    optional double position = 2;
+    optional double velocity = 3;
+    optional double torque = 4;
+    optional double kp = 5;
+    optional double kd = 6;
+}
+
+message ActuatorStatus {
+    uint32 actuator_id = 1;
+    optional double position = 2;
+    optional double velocity = 3;
+}
+
+message CommandActuatorsRequest {
+    repeated SingleActuatorCommand commands = 1;
+}
+
+message CommandActuatorsResponse {
+    repeated ActuatorStatus statuses = 1;
+    ResponseCode response_code = 2;
+}
+
+enum ResponseCode {
+    OK = 0;
+    ERROR = 1;
+}
