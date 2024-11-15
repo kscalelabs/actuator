@@ -6,6 +6,7 @@ use std::time::Duration;
 use crate::motor::{MotorControlParams, MotorFeedback, MotorSdoParams, Motors};
 use crate::types::{MotorType, RunMode};
 use log::{error, info};
+use eyre::{eyre, WrapErr, Result};
 
 pub struct MotorsSupervisor {
     motors: Arc<Mutex<Motors>>,
@@ -106,12 +107,20 @@ impl MotorsSupervisor {
             // Runs pre-flight checks.
             if let Err(err) = motors.send_resets() {
                 error!("Failed to send resets: {}", err);
-                *running.write().unwrap() = false;
+                if let Ok(mut running_guard) = running.write() {
+                    *running_guard = false;
+                } else {
+                    error!("Failed to acquire write lock on running flag");
+                }
                 return;
             }
             if let Err(err) = motors.send_starts() {
                 error!("Failed to send starts: {}", err);
-                *running.write().unwrap() = false;
+                if let Ok(mut running_guard) = running.write() {
+                    *running_guard = false;
+                } else {
+                    error!("Failed to acquire write lock on running flag");
+                }
                 return;
             }
 
@@ -123,26 +132,37 @@ impl MotorsSupervisor {
             loop {
                 {
                     // If not running, break the loop.
-                    if !*running.read().unwrap() {
-                        break;
+                    if let Ok(running_guard) = running.read() {
+                        if !*running_guard {
+                            break;
+                        }
+                    } else {
+                        error!("Failed to acquire read lock on running flag");
                     }
                 }
 
                 {
                     // If paused, just wait a short time without sending any commands.
-                    if *paused.read().unwrap() {
-                        thread::sleep(Duration::from_millis(10));
-                        continue;
+                    if let Ok(paused_guard) = paused.read() {
+                        if *paused_guard {
+                            thread::sleep(Duration::from_millis(10));
+                            continue;
+                        }
+                    } else {
+                        error!("Failed to acquire read lock on paused flag");
                     }
                 }
 
                 {
                     // If restart is requested, reset and restart the motors.
-                    let mut restart = restart.lock().unwrap();
-                    if *restart {
-                        *restart = false;
-                        let _ = motors.send_resets();
-                        let _ = motors.send_starts();
+                    if let Ok(mut restart_guard) = restart.lock() {
+                        if *restart_guard {
+                            *restart_guard = false;
+                            let _ = motors.send_resets();
+                            let _ = motors.send_starts();
+                        }
+                    } else {
+                        error!("Failed to acquire lock on restart flag");
                     }
                 }
 
@@ -150,44 +170,72 @@ impl MotorsSupervisor {
 
                 {
                     // Send zero torque commands to motors that need to be zeroed.
-                    let mut motor_ids_to_zero = motors_to_zero.lock().unwrap();
-                    if !motor_ids_to_zero.is_empty() {
-                        let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
-                        let _ = motors.zero_motors(&motor_ids);
-                        motor_ids_to_zero.clear();
+                    if let Ok(mut motor_ids_to_zero) = motors_to_zero.lock() {
+                        if !motor_ids_to_zero.is_empty() {
+                            let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
+                            let _ = motors.zero_motors(&motor_ids);
+                            motor_ids_to_zero.clear();
+                        }
+                    } else {
+                        error!("Failed to acquire lock on motors_to_zero");
                     }
                 }
 
                 {
                     // Send updated sdo parameters to motors that need them.
-                    let mut motors_to_set_sdo = motors_to_set_sdo.lock().unwrap();
-                    if !motors_to_set_sdo.is_empty() {
-                        for (motor_id, params) in motors_to_set_sdo.iter_mut() {
-                            if let Some(torque_limit) = params.torque_limit {
-                                motors.set_torque_limit(*motor_id, torque_limit).unwrap();
+                    if let Ok(mut motors_to_set_sdo) = motors_to_set_sdo.lock() {
+                        if !motors_to_set_sdo.is_empty() {
+                            for (motor_id, params) in motors_to_set_sdo.iter_mut() {
+                                if let Some(torque_limit) = params.torque_limit {
+                                    if let Err(e) = motors.set_torque_limit(*motor_id, torque_limit) {
+                                        error!("Failed to set torque limit for motor {}: {}", motor_id, e);
+                                    }
+                                }
+                                if let Some(speed_limit) = params.speed_limit {
+                                    if let Err(e) = motors.set_speed_limit(*motor_id, speed_limit) {
+                                        error!("Failed to set speed limit for motor {}: {}", motor_id, e);
+                                    }
+                                }
+                                if let Some(current_limit) = params.current_limit {
+                                    if let Err(e) = motors.set_current_limit(*motor_id, current_limit) {
+                                        error!("Failed to set current limit for motor {}: {}", motor_id, e);
+                                    }
+                                }
                             }
-                            if let Some(speed_limit) = params.speed_limit {
-                                motors.set_speed_limit(*motor_id, speed_limit).unwrap();
-                            }
-                            if let Some(current_limit) = params.current_limit {
-                                motors.set_current_limit(*motor_id, current_limit).unwrap();
-                            }
+                            motors_to_set_sdo.clear();
                         }
-                        motors_to_set_sdo.clear();
+                    } else {
+                        error!("Failed to acquire lock on motors_to_set_sdo");
                     }
                 }
 
                 {
                     let params_copy = {
-                        let target_params = target_params.read().unwrap();
-                        target_params.clone()
+                        if let Ok(target_params) = target_params.read() {
+                            target_params.clone()
+                        } else {
+                            error!("Failed to acquire read lock on target_params");
+                            HashMap::new()
+                        }
                     };
 
                     if !params_copy.is_empty() {
                         match motors.send_motor_controls(&params_copy, *serial.read().unwrap()) {
                             Ok(feedbacks) => {
-                                let mut latest_feedback = latest_feedback.write().unwrap();
-                                let mut failed_commands = failed_commands.write().unwrap();
+                                let mut latest_feedback = match latest_feedback.write() {
+                                    Ok(guard) => guard,
+                                    Err(e) => {
+                                        error!("Failed to acquire write lock on latest_feedback: {}", e);
+                                        continue;
+                                    }
+                                };
+                                let mut failed_commands = match failed_commands.write() {
+                                    Ok(guard) => guard,
+                                    Err(e) => {
+                                        error!("Failed to acquire write lock on failed_commands: {}", e);
+                                        continue;
+                                    }
+                                };
                                 for &motor_id in params_copy.keys() {
                                     if let Some(feedback) = feedbacks.get(&motor_id) {
                                         latest_feedback.insert(motor_id, feedback.clone());
@@ -195,7 +243,11 @@ impl MotorsSupervisor {
                                         failed_commands.entry(motor_id).and_modify(|e| *e += 1);
                                     }
                                 }
-                                *total_commands.write().unwrap() += 1;
+                                if let Ok(mut total) = total_commands.write() {
+                                    *total += 1;
+                                } else {
+                                    error!("Failed to acquire write lock on total_commands");
+                                }
                             }
                             Err(_) => {}
                         }
@@ -207,15 +259,32 @@ impl MotorsSupervisor {
                     let elapsed = loop_start_time.duration_since(last_update_time);
                     last_update_time = loop_start_time;
                     let current_rate = 1.0 / elapsed.as_secs_f64();
-                    let prev_actual_update_rate = *actual_update_rate.read().unwrap();
-                    *actual_update_rate.write().unwrap() =
-                        prev_actual_update_rate * 0.9 + current_rate * 0.1;
+
+                    let prev_actual_update_rate = actual_update_rate.read().map_or_else(
+                        |e| {
+                            error!("Failed to acquire read lock on actual_update_rate: {}", e);
+                            0.0
+                        },
+                        |rate| *rate
+                    );
+
+                    if let Ok(mut actual) = actual_update_rate.write() {
+                        *actual = prev_actual_update_rate * 0.9 + current_rate * 0.1;
+                    } else {
+                        error!("Failed to acquire write lock on actual_update_rate");
+                    }
                 }
 
                 {
                     // Sleep to maintain maximum update rate.
                     let target_duration =
-                        Duration::from_secs_f64(1.0 / *max_update_rate.read().unwrap());
+                        Duration::from_secs_f64(1.0 / max_update_rate.read().map_or_else(
+                            |e| {
+                                error!("Failed to acquire read lock on max_update_rate: {}", e);
+                                0.0
+                            },
+                            |rate| *rate
+                        ));
                     let elapsed = loop_start_time.elapsed();
                     let min_sleep_duration = Duration::from_micros(1);
                     if target_duration > elapsed + min_sleep_duration {
@@ -239,13 +308,21 @@ impl MotorsSupervisor {
 
     // Updated methods to access the command counters
     pub fn get_total_commands(&self) -> u64 {
-        *self.total_commands.read().unwrap()
+        self.total_commands.read().map_or_else(
+            |e| {
+                error!("Failed to acquire read lock on total_commands: {}", e);
+                0
+            },
+            |total| *total
+        )
     }
-
     pub fn get_failed_commands(&self, motor_id: u8) -> Result<u64, std::io::Error> {
         self.failed_commands
             .read()
-            .unwrap()
+            .map_err(|e| std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to acquire read lock: {}", e)
+            ))?
             .get(&motor_id)
             .copied()
             .ok_or_else(|| {
@@ -256,14 +333,34 @@ impl MotorsSupervisor {
             })
     }
 
-    pub fn reset_command_counters(&self) {
-        *self.total_commands.write().unwrap() = 0;
-        *self.failed_commands.write().unwrap() = HashMap::new();
+    pub fn reset_command_counters(&self) -> Result<(), std::io::Error> {
+        self.total_commands
+            .write()
+            .map_err(|e| std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to acquire write lock on total_commands: {}", e)
+            ))
+            .map(|mut total| *total = 0)?;
+
+        self.failed_commands
+            .write()
+            .map_err(|e| std::io::Error::new(
+                std::io::ErrorKind::Other, 
+                format!("Failed to acquire write lock on failed_commands: {}", e)
+            ))
+            .map(|mut failed| *failed = HashMap::new())?;
+
+        Ok(())
     }
 
     pub fn set_all_params(&self, params: HashMap<u8, MotorControlParams>) {
-        let mut target_params = self.target_params.write().unwrap();
-        *target_params = params;
+        let target_params = self.target_params.write().map_err(|e| {
+            error!("Failed to acquire write lock on target_params: {}", e);
+        }).ok();
+
+        if let Some(mut target_params) = target_params {
+            *target_params = params;
+        }
     }
 
     pub fn set_params(
@@ -383,34 +480,58 @@ impl MotorsSupervisor {
         }
     }
 
-    pub fn get_kd(&self, motor_id: u8) -> Result<f32, std::io::Error> {
-        let target_params = self.target_params.read().unwrap();
+    pub fn get_kd(&self, motor_id: u8) -> Result<f32, eyre::Error> {
+        let target_params = self.target_params.read()
+            .map_err(|e| eyre!("Failed to read target params: {}", e))?;
+        
         target_params
             .get(&motor_id)
             .map(|params| params.kd)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Motor ID {} not found", motor_id),
-                )
-            })
+            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
     }
 
-    pub fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> Result<f32, std::io::Error> {
-        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
-        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit: Some(torque_limit), speed_limit: None, current_limit: None });
+    pub fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> Result<f32, eyre::Error> {
+        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock()
+            .map_err(|e| eyre!("Failed to lock motors_to_set_sdo: {}", e))?;
+        
+        motors_to_set_sdo.insert(
+            motor_id, 
+            MotorSdoParams { 
+                torque_limit: Some(torque_limit), 
+                speed_limit: None, 
+                current_limit: None 
+            }
+        );
         Ok(torque_limit)
     }
 
-    pub fn set_speed_limit(&self, motor_id: u8, speed_limit: f32) -> Result<f32, std::io::Error> {
-        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
-        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit: None, speed_limit: Some(speed_limit), current_limit: None });
+    pub fn set_speed_limit(&self, motor_id: u8, speed_limit: f32) -> Result<f32, eyre::Error> {
+        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock()
+            .map_err(|e| eyre!("Failed to lock motors_to_set_sdo: {}", e))?;
+        
+        motors_to_set_sdo.insert(
+            motor_id, 
+            MotorSdoParams { 
+                torque_limit: None, 
+                speed_limit: Some(speed_limit), 
+                current_limit: None 
+            }
+        );
         Ok(speed_limit)
     }
 
-    pub fn set_current_limit(&self, motor_id: u8, current_limit: f32) -> Result<f32, std::io::Error> {
-        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock().unwrap();
-        motors_to_set_sdo.insert(motor_id, MotorSdoParams { torque_limit: None, speed_limit: None, current_limit: Some(current_limit) });
+    pub fn set_current_limit(&self, motor_id: u8, current_limit: f32) -> Result<f32, eyre::Error> {
+        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock()
+            .map_err(|e| eyre!("Failed to lock motors_to_set_sdo: {}", e))?;
+        
+        motors_to_set_sdo.insert(
+            motor_id, 
+            MotorSdoParams { 
+                torque_limit: None, 
+                speed_limit: None, 
+                current_limit: Some(current_limit) 
+            }
+        );
         Ok(current_limit)
     }
 
