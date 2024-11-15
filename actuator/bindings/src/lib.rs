@@ -384,26 +384,29 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn get_latest_feedback(&self) -> HashMap<u8, PyRobstrideMotorFeedback> {
-        self.inner
+    fn get_latest_feedback(&self) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
+        Ok(self.inner
             .get_latest_feedback()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
             .into_iter()
             .map(|(k, v)| (k, v.into()))
-            .collect()
+            .collect())
     }
 
     fn toggle_pause(&self) -> PyResult<()> {
-        self.inner.toggle_pause();
-        Ok(())
+        self.inner
+            .toggle_pause()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn stop(&self) -> PyResult<()> {
-        self.inner.stop();
-        Ok(())
+        self.inner
+            .stop()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn __repr__(&self) -> PyResult<String> {
-        let motor_count = self.inner.get_latest_feedback().len();
+        let motor_count = self.inner.get_latest_feedback().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?.len();
         Ok(format!(
             "PyRobstrideMotorsSupervisor(motor_count={})",
             motor_count
@@ -427,7 +430,9 @@ impl PyRobstrideMotorsSupervisor {
     }
 
     fn is_running(&self) -> PyResult<bool> {
-        Ok(self.inner.is_running())
+        self.inner
+            .is_running()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     #[setter]
@@ -438,16 +443,20 @@ impl PyRobstrideMotorsSupervisor {
 
     #[getter]
     fn actual_update_rate(&self) -> PyResult<f64> {
-        Ok(self.inner.get_actual_update_rate())
+        self.inner
+            .get_actual_update_rate()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn toggle_serial(&self) -> PyResult<bool> {
-        Ok(self.inner.toggle_serial())
+        self.inner
+            .toggle_serial()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     #[getter]
     fn serial(&self) -> PyResult<bool> {
-        Ok(self.inner.get_serial())
+        self.inner.get_serial().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 }
 
