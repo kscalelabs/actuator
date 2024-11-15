@@ -278,8 +278,9 @@ impl PyRobstrideMotorsSupervisor {
             .into_iter()
             .map(|(k, v)| (k, RobstrideMotorControlParams::from(v)))
             .collect();
-        self.inner.set_all_params(params);
-        Ok(())
+        self.inner
+            .set_all_params(params)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn set_params(&self, motor_id: u8, params: PyRobstrideMotorControlParams) -> PyResult<()> {
@@ -425,8 +426,9 @@ impl PyRobstrideMotorsSupervisor {
     }
 
     fn reset_command_counters(&self) -> PyResult<()> {
-        self.inner.reset_command_counters();
-        Ok(())
+        self.inner
+            .reset_command_counters()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn is_running(&self) -> PyResult<bool> {
@@ -437,8 +439,9 @@ impl PyRobstrideMotorsSupervisor {
 
     #[setter]
     fn max_update_rate(&self, rate: f64) -> PyResult<()> {
-        self.inner.set_max_update_rate(rate);
-        Ok(())
+        self.inner
+            .set_max_update_rate(rate)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     #[getter]
