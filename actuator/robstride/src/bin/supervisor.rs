@@ -31,7 +31,7 @@ fn sinusoid(
 
     let start = Instant::now();
     let mut last_second = start;
-    controller.reset_command_counters();
+    controller.reset_command_counters()?;
 
     while start.elapsed() < duration {
         let t = start.elapsed().as_secs_f32();
