@@ -184,10 +184,11 @@ impl Motors {
                     "Failed to get the current mode",
                 ));
             }
-
-            let single_read_mode = read_mode.values().next().unwrap().clone();
-            if read_mode.values().all(|&x| x == single_read_mode) {
-                self.mode = single_read_mode;
+            if let Some(first_mode) = read_mode.values().next() {
+                let single_read_mode = first_mode.clone();
+                if read_mode.values().all(|&x| x == single_read_mode) {
+                    self.mode = single_read_mode;
+                }
             }
         }
 
