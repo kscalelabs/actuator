@@ -102,7 +102,14 @@ impl MotorsSupervisor {
         let serial = Arc::clone(&self.serial);
 
         thread::spawn(move || {
-            let mut motors = motors.lock().unwrap();
+            let motors_guard = match motors.lock() {
+                Ok(guard) => guard,
+                Err(err) => {
+                    error!("Failed to lock motors: {}", err);
+                    return;
+                }
+            };
+            let mut motors = motors_guard;
 
             // Runs pre-flight checks.
             if let Err(err) = motors.send_resets() {
@@ -220,7 +227,15 @@ impl MotorsSupervisor {
                     };
 
                     if !params_copy.is_empty() {
-                        match motors.send_motor_controls(&params_copy, *serial.read().unwrap()) {
+                        let serial_value = serial.read().map_or_else(
+                            |e| {
+                                error!("Failed to acquire read lock on serial: {}", e);
+                                true  // Default to true if we can't read the lock
+                            },
+                            |val| *val
+                        );
+
+                        match motors.send_motor_controls(&params_copy, serial_value) {
                             Ok(feedbacks) => {
                                 let mut latest_feedback = match latest_feedback.write() {
                                     Ok(guard) => guard,
@@ -353,14 +368,13 @@ impl MotorsSupervisor {
         Ok(())
     }
 
-    pub fn set_all_params(&self, params: HashMap<u8, MotorControlParams>) {
-        let target_params = self.target_params.write().map_err(|e| {
-            error!("Failed to acquire write lock on target_params: {}", e);
-        }).ok();
-
-        if let Some(mut target_params) = target_params {
-            *target_params = params;
-        }
+    pub fn set_all_params(&self, params: HashMap<u8, MotorControlParams>) -> Result<(), std::io::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to acquire write lock on target_params: {}", e)
+        ))?;
+        *target_params = params;
+        Ok(())
     }
 
     pub fn set_params(
@@ -368,21 +382,37 @@ impl MotorsSupervisor {
         motor_id: u8,
         params: MotorControlParams,
     ) -> Result<(), std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to acquire write lock on target_params: {}", e)
+        ))?;
         target_params.insert(motor_id, params);
         Ok(())
     }
 
     pub fn set_positions(&self, positions: HashMap<u8, f32>) -> Result<(), std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to acquire write lock on target_params: {}", e)
+        ))?;
         for (motor_id, position) in positions {
-            target_params.get_mut(&motor_id).unwrap().position = position;
+            if let Some(params) = target_params.get_mut(&motor_id) {
+                params.position = position;
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Motor ID {} not found", motor_id),
+                ));
+            }
         }
         Ok(())
     }
 
     pub fn set_position(&self, motor_id: u8, position: f32) -> Result<f32, std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to acquire write lock on target_params: {}", e)
+        ))?;
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.position = position;
             Ok(params.position)
@@ -394,89 +424,72 @@ impl MotorsSupervisor {
         }
     }
 
-    pub fn get_position(&self, motor_id: u8) -> Result<f32, std::io::Error> {
-        let target_params = self.target_params.read().unwrap();
+    pub fn get_position(&self, motor_id: u8) -> Result<f32, eyre::Error> {
+        let target_params = self.target_params.read()
+            .map_err(|e| eyre!("Failed to acquire read lock on target_params: {}", e))?;
         target_params
             .get(&motor_id)
             .map(|params| params.position)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Motor ID {} not found", motor_id),
-                )
-            })
+            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
     }
 
-    pub fn set_velocities(&self, velocities: HashMap<u8, f32>) -> Result<(), std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+    pub fn set_velocities(&self, velocities: HashMap<u8, f32>) -> Result<(), eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
         for (motor_id, velocity) in velocities {
-            target_params.get_mut(&motor_id).unwrap().velocity = velocity;
+            if let Some(params) = target_params.get_mut(&motor_id) {
+                params.velocity = velocity;
+            } else {
+                return Err(eyre!("Motor ID {} not found", motor_id));
+            }
         }
         Ok(())
     }
 
-    pub fn set_velocity(&self, motor_id: u8, velocity: f32) -> Result<f32, std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+    pub fn set_velocity(&self, motor_id: u8, velocity: f32) -> Result<f32, eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.velocity = velocity;
             Ok(params.velocity)
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Motor ID {} not found", motor_id),
-            ))
+            Err(eyre!("Motor ID {} not found", motor_id))
         }
     }
 
-    pub fn get_velocity(&self, motor_id: u8) -> Result<f32, std::io::Error> {
-        let target_params = self.target_params.read().unwrap();
+    pub fn get_velocity(&self, motor_id: u8) -> Result<f32, eyre::Error> {
+        let target_params = self.target_params.read()
+            .map_err(|e| eyre!("Failed to acquire read lock on target_params: {}", e))?;
         target_params
             .get(&motor_id)
             .map(|params| params.velocity)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Motor ID {} not found", motor_id),
-                )
-            })
+            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
     }
 
-    pub fn set_kp(&self, motor_id: u8, kp: f32) -> Result<f32, std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+    pub fn set_kp(&self, motor_id: u8, kp: f32) -> Result<f32, eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.kp = kp.max(0.0); // Clamp kp to be non-negative.
             Ok(params.kp)
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Motor ID {} not found", motor_id),
-            ))
+            Err(eyre!("Motor ID {} not found", motor_id))
         }
     }
 
-    pub fn get_kp(&self, motor_id: u8) -> Result<f32, std::io::Error> {
-        let target_params = self.target_params.read().unwrap();
+    pub fn get_kp(&self, motor_id: u8) -> Result<f32, eyre::Error> {
+        let target_params = self.target_params.read()
+            .map_err(|e| eyre!("Failed to acquire read lock on target_params: {}", e))?;
         target_params
             .get(&motor_id)
             .map(|params| params.kp)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Motor ID {} not found", motor_id),
-                )
-            })
+            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
     }
 
-    pub fn set_kd(&self, motor_id: u8, kd: f32) -> Result<f32, std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+    pub fn set_kd(&self, motor_id: u8, kd: f32) -> Result<f32, eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.kd = kd.max(0.0); // Clamp kd to be non-negative.
             Ok(params.kd)
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Motor ID {} not found", motor_id),
-            ))
+            Err(eyre!("Motor ID {} not found", motor_id))
         }
     }
 
@@ -535,87 +548,87 @@ impl MotorsSupervisor {
         Ok(current_limit)
     }
 
-    pub fn set_torque(&self, motor_id: u8, torque: f32) -> Result<f32, std::io::Error> {
-        let mut target_params = self.target_params.write().unwrap();
+    pub fn set_torque(&self, motor_id: u8, torque: f32) -> Result<f32, eyre::Error> {
+        let mut target_params = self.target_params.write()
+            .map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.torque = torque;
             Ok(params.torque)
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Motor ID {} not found", motor_id),
-            ))
+            Err(eyre!("Motor ID {} not found", motor_id))
         }
     }
 
-    pub fn get_torque(&self, motor_id: u8) -> Result<f32, std::io::Error> {
-        let target_params = self.target_params.read().unwrap();
+    pub fn get_torque(&self, motor_id: u8) -> Result<f32, eyre::Error> {
+        let target_params = self.target_params.read()
+            .map_err(|e| eyre!("Failed to read target params: {}", e))?;
         target_params
             .get(&motor_id)
             .map(|params| params.torque)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Motor ID {} not found", motor_id),
-                )
-            })
+            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
     }
 
-    pub fn add_motor_to_zero(&self, motor_id: u8) -> Result<(), std::io::Error> {
+    pub fn add_motor_to_zero(&self, motor_id: u8) -> Result<(), eyre::Error> {
         // We need to set the motor parameters to zero to avoid the motor
         // rapidly changing to the new target after it is zeroed.
         self.set_torque(motor_id, 0.0)?;
         self.set_position(motor_id, 0.0)?;
         self.set_velocity(motor_id, 0.0)?;
-        let mut motors_to_zero = self.motors_to_zero.lock().unwrap();
+        let mut motors_to_zero = self.motors_to_zero.lock()
+            .map_err(|e| eyre!("Failed to lock motors_to_zero: {}", e))?;
         motors_to_zero.insert(motor_id);
         Ok(())
     }
 
     pub fn get_latest_feedback(&self) -> HashMap<u8, MotorFeedback> {
-        let latest_feedback = self.latest_feedback.read().unwrap();
+        let latest_feedback = self.latest_feedback.read()
+            .map_err(|e| eyre!("Failed to read latest_feedback: {}", e))?;
         latest_feedback.clone()
     }
 
-    pub fn toggle_pause(&self) {
-        let mut paused = self.paused.write().unwrap();
+    pub fn toggle_pause(&self) -> Result<(), eyre::Error> {
+        let mut paused = self.paused.write().map_err(|e| eyre!("Failed to acquire write lock on paused: {}", e))?;
         *paused = !*paused;
+        Ok(())
     }
 
-    pub fn reset(&self) {
-        let mut restart = self.restart.lock().unwrap();
+    pub fn reset(&self) -> Result<(), eyre::Error> {
+        let mut restart = self.restart.lock().map_err(|e| eyre!("Failed to lock restart: {}", e))?;
         *restart = true;
+        Ok(())
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&self) -> Result<(), eyre::Error> {
         {
-            let mut running = self.running.write().unwrap();
+            let mut running = self.running.write().map_err(|e| eyre!("Failed to acquire write lock on running: {}", e))?;
             *running = false;
         }
         thread::sleep(Duration::from_millis(200));
+        Ok(())
     }
 
-    pub fn is_running(&self) -> bool {
-        *self.running.read().unwrap()
+    pub fn is_running(&self) -> Result<bool, eyre::Error> {
+        Ok(*self.running.read().map_err(|e| eyre!("Failed to read running: {}", e))?)
     }
 
-    pub fn set_max_update_rate(&self, rate: f64) {
-        let mut max_rate = self.max_update_rate.write().unwrap();
+    pub fn set_max_update_rate(&self, rate: f64) -> Result<(), eyre::Error> {
+        let mut max_rate = self.max_update_rate.write().map_err(|e| eyre!("Failed to acquire write lock on max_update_rate: {}", e))?;
         *max_rate = rate;
+        Ok(())
     }
 
     pub fn get_actual_update_rate(&self) -> f64 {
-        *self.actual_update_rate.read().unwrap()
+        *self.actual_update_rate.read().map_err(|e| eyre!("Failed to read actual_update_rate: {}", e))?
     }
 
-    pub fn get_serial(&self) -> bool {
-        *self.serial.read().unwrap()
+    pub fn get_serial(&self) -> Result<bool, eyre::Error> {
+        Ok(*self.serial.read().map_err(|e| eyre!("Failed to read serial: {}", e))?)
     }
 
-    pub fn toggle_serial(&self) -> bool {
-        let mut serial = self.serial.write().unwrap();
+    pub fn toggle_serial(&self) -> Result<bool, eyre::Error> {
+        let mut serial = self.serial.write().map_err(|e| eyre!("Failed to acquire write lock on serial: {}", e))?;
         *serial = !*serial;
-        *serial
+        Ok(*serial)
     }
 }
 
