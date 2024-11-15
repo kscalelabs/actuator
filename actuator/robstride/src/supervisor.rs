@@ -322,55 +322,46 @@ impl MotorsSupervisor {
     }
 
     // Updated methods to access the command counters
-    pub fn get_total_commands(&self) -> u64 {
-        self.total_commands.read().map_or_else(
-            |e| {
-                error!("Failed to acquire read lock on total_commands: {}", e);
-                0
-            },
-            |total| *total
-        )
+    pub fn get_total_commands(&self) -> Result<u64, eyre::Error> {
+        Ok(*self.total_commands.read().map_err(|e| eyre!(
+            "Failed to acquire read lock on total_commands: {}", e
+        ))?)
     }
-    pub fn get_failed_commands(&self, motor_id: u8) -> Result<u64, std::io::Error> {
+    pub fn get_failed_commands(&self, motor_id: u8) -> Result<u64, eyre::Error> {
         self.failed_commands
             .read()
-            .map_err(|e| std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to acquire read lock: {}", e)
+            .map_err(|e| eyre!(
+                "Failed to acquire read lock: {}", e
             ))?
             .get(&motor_id)
             .copied()
             .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Motor ID {} not found", motor_id),
+                eyre!(
+                    "Motor ID {} not found", motor_id
                 )
             })
     }
 
-    pub fn reset_command_counters(&self) -> Result<(), std::io::Error> {
+    pub fn reset_command_counters(&self) -> Result<(), eyre::Error> {
         self.total_commands
             .write()
-            .map_err(|e| std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to acquire write lock on total_commands: {}", e)
+            .map_err(|e| eyre!(
+                "Failed to acquire write lock on total_commands: {}", e
             ))
             .map(|mut total| *total = 0)?;
 
         self.failed_commands
             .write()
-            .map_err(|e| std::io::Error::new(
-                std::io::ErrorKind::Other, 
-                format!("Failed to acquire write lock on failed_commands: {}", e)
+            .map_err(|e| eyre!(
+                "Failed to acquire write lock on failed_commands: {}", e
             ))
             .map(|mut failed| *failed = HashMap::new())?;
 
         Ok(())
     }
 
-    pub fn set_all_params(&self, params: HashMap<u8, MotorControlParams>) -> Result<(), std::io::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
-            std::io::ErrorKind::Other,
+    pub fn set_all_params(&self, params: HashMap<u8, MotorControlParams>) -> Result<(), eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!(
             format!("Failed to acquire write lock on target_params: {}", e)
         ))?;
         *target_params = params;
@@ -381,45 +372,38 @@ impl MotorsSupervisor {
         &self,
         motor_id: u8,
         params: MotorControlParams,
-    ) -> Result<(), std::io::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
-            std::io::ErrorKind::Other,
+    ) -> Result<(), eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!(
             format!("Failed to acquire write lock on target_params: {}", e)
         ))?;
         target_params.insert(motor_id, params);
         Ok(())
     }
 
-    pub fn set_positions(&self, positions: HashMap<u8, f32>) -> Result<(), std::io::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to acquire write lock on target_params: {}", e)
+    pub fn set_positions(&self, positions: HashMap<u8, f32>) -> Result<(), eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!(
+            "Failed to acquire write lock on target_params: {}", e
         ))?;
         for (motor_id, position) in positions {
             if let Some(params) = target_params.get_mut(&motor_id) {
                 params.position = position;
             } else {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Motor ID {} not found", motor_id),
-                ));
+                return Err(eyre!("Motor ID {} not found", motor_id));
             }
         }
         Ok(())
     }
 
-    pub fn set_position(&self, motor_id: u8, position: f32) -> Result<f32, std::io::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to acquire write lock on target_params: {}", e)
+    pub fn set_position(&self, motor_id: u8, position: f32) -> Result<f32, eyre::Error> {
+        let mut target_params = self.target_params.write().map_err(|e| eyre!(
+            "Failed to acquire write lock on target_params: {}", e
         ))?;
         if let Some(params) = target_params.get_mut(&motor_id) {
             params.position = position;
             Ok(params.position)
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Motor ID {} not found", motor_id),
+            Err(eyre!(
+                "Motor ID {} not found", motor_id
             ))
         }
     }
