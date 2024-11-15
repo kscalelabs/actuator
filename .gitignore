@@ -27,3 +27,6 @@ Cargo.lock
 
 # CSV files
 *.csv
+
+# VSCode
+.vscode/

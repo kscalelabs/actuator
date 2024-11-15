@@ -278,8 +278,9 @@ impl PyRobstrideMotorsSupervisor {
             .into_iter()
             .map(|(k, v)| (k, RobstrideMotorControlParams::from(v)))
             .collect();
-        self.inner.set_all_params(params);
-        Ok(())
+        self.inner
+            .set_all_params(params)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn set_params(&self, motor_id: u8, params: PyRobstrideMotorControlParams) -> PyResult<()> {
@@ -384,26 +385,29 @@ impl PyRobstrideMotorsSupervisor {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
-    fn get_latest_feedback(&self) -> HashMap<u8, PyRobstrideMotorFeedback> {
-        self.inner
+    fn get_latest_feedback(&self) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
+        Ok(self.inner
             .get_latest_feedback()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
             .into_iter()
             .map(|(k, v)| (k, v.into()))
-            .collect()
+            .collect())
     }
 
     fn toggle_pause(&self) -> PyResult<()> {
-        self.inner.toggle_pause();
-        Ok(())
+        self.inner
+            .toggle_pause()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn stop(&self) -> PyResult<()> {
-        self.inner.stop();
-        Ok(())
+        self.inner
+            .stop()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn __repr__(&self) -> PyResult<String> {
-        let motor_count = self.inner.get_latest_feedback().len();
+        let motor_count = self.inner.get_latest_feedback().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?.len();
         Ok(format!(
             "PyRobstrideMotorsSupervisor(motor_count={})",
             motor_count
@@ -412,7 +416,7 @@ impl PyRobstrideMotorsSupervisor {
 
     #[getter]
     fn total_commands(&self) -> PyResult<u64> {
-        Ok(self.inner.get_total_commands())
+        self.inner.get_total_commands().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn failed_commands_for(&self, motor_id: u8) -> PyResult<u64> {
@@ -422,32 +426,40 @@ impl PyRobstrideMotorsSupervisor {
     }
 
     fn reset_command_counters(&self) -> PyResult<()> {
-        self.inner.reset_command_counters();
-        Ok(())
+        self.inner
+            .reset_command_counters()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn is_running(&self) -> PyResult<bool> {
-        Ok(self.inner.is_running())
+        self.inner
+            .is_running()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     #[setter]
     fn max_update_rate(&self, rate: f64) -> PyResult<()> {
-        self.inner.set_max_update_rate(rate);
-        Ok(())
+        self.inner
+            .set_max_update_rate(rate)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     #[getter]
     fn actual_update_rate(&self) -> PyResult<f64> {
-        Ok(self.inner.get_actual_update_rate())
+        self.inner
+            .get_actual_update_rate()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn toggle_serial(&self) -> PyResult<bool> {
-        Ok(self.inner.toggle_serial())
+        self.inner
+            .toggle_serial()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     #[getter]
     fn serial(&self) -> PyResult<bool> {
-        Ok(self.inner.get_serial())
+        self.inner.get_serial().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 }
 

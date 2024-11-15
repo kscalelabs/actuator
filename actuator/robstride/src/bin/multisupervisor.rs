@@ -38,7 +38,7 @@ fn sinusoid(
 
     let start = Instant::now();
     let mut last_second = start;
-    controller.reset_command_counters();
+    controller.reset_command_counters()?;
 
     while start.elapsed() < duration {
         let t = start.elapsed().as_secs_f32();
@@ -53,7 +53,7 @@ fn sinusoid(
         if last_second.elapsed() > Duration::from_secs(1) {
             println!(
                 "Commands per second: {}",
-                total_commands as f32 / start.elapsed().as_secs_f32()
+                total_commands.unwrap_or(0) as f32 / start.elapsed().as_secs_f32()
             );
             last_second = Instant::now();
         }
@@ -231,21 +231,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Added motors {:?} to zero list", test_ids);
             }
             "get_feedback" | "g" => {
-                let feedback = controller.get_latest_feedback();
+                let feedback = controller.get_latest_feedback()?;
                 for (id, fb) in feedback {
                     println!("Motor {}: {:?}", id, fb);
                 }
             }
             "pause" | "w" => {
-                controller.toggle_pause();
+                controller.toggle_pause()?;
                 println!("Toggled pause state");
             }
             "reset" | "r" => {
-                controller.reset();
+                controller.reset()?;
                 println!("Reset motors");
             }
             "quit" | "q" => {
-                controller.stop();
+                controller.stop()?;
                 println!("Exiting...");
                 break;
             }
