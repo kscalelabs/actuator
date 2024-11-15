@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::motor::{MotorControlParams, MotorFeedback, MotorSdoParams, Motors};
 use crate::types::{MotorType, RunMode};
 use log::{error, info};
-use eyre::{eyre, WrapErr, Result};
+use eyre::{eyre, Result};
 
 pub struct MotorsSupervisor {
     motors: Arc<Mutex<Motors>>,
@@ -634,6 +634,6 @@ impl MotorsSupervisor {
 
 impl Drop for MotorsSupervisor {
     fn drop(&mut self) {
-        self.stop();
+        let _ = self.stop();
     }
 }

@@ -181,21 +181,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Added motor {} to zero list", test_id);
             }
             "get_feedback" | "g" => {
-                let feedback = controller.get_latest_feedback();
+                let feedback = controller.get_latest_feedback()?;
                 for (id, fb) in feedback {
                     println!("Motor {}: {:?}", id, fb);
                 }
             }
             "pause" | "w" => {
-                controller.toggle_pause();
+                controller.toggle_pause()?;
                 println!("Toggled pause state");
             }
             "reset" | "r" => {
-                controller.reset();
+                controller.reset()?;
                 println!("Reset motors");
             }
             "quit" | "q" => {
-                controller.stop();
+                controller.stop()?;
                 println!("Exiting...");
                 break;
             }
