@@ -580,10 +580,10 @@ impl MotorsSupervisor {
         Ok(())
     }
 
-    pub fn get_latest_feedback(&self) -> HashMap<u8, MotorFeedback> {
+    pub fn get_latest_feedback(&self) -> Result<HashMap<u8, MotorFeedback>, eyre::Error> {
         let latest_feedback = self.latest_feedback.read()
             .map_err(|e| eyre!("Failed to read latest_feedback: {}", e))?;
-        latest_feedback.clone()
+        Ok(latest_feedback.clone())
     }
 
     pub fn toggle_pause(&self) -> Result<(), eyre::Error> {
@@ -617,8 +617,8 @@ impl MotorsSupervisor {
         Ok(())
     }
 
-    pub fn get_actual_update_rate(&self) -> f64 {
-        *self.actual_update_rate.read().map_err(|e| eyre!("Failed to read actual_update_rate: {}", e))?
+    pub fn get_actual_update_rate(&self) -> Result<f64, eyre::Error> {
+        Ok(*self.actual_update_rate.read().map_err(|e| eyre!("Failed to read actual_update_rate: {}", e))?)
     }
 
     pub fn get_serial(&self) -> Result<bool, eyre::Error> {
