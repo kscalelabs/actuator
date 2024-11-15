@@ -44,7 +44,7 @@ fn sinusoid(
         if last_second.elapsed() > Duration::from_secs(1) {
             println!(
                 "Commands per second: {}",
-                total_commands as f32 / start.elapsed().as_secs_f32()
+                total_commands.unwrap_or(0) as f32 / start.elapsed().as_secs_f32()
             );
             last_second = Instant::now();
         }

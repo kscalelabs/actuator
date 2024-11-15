@@ -416,7 +416,7 @@ impl PyRobstrideMotorsSupervisor {
 
     #[getter]
     fn total_commands(&self) -> PyResult<u64> {
-        Ok(self.inner.get_total_commands())
+        self.inner.get_total_commands().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     fn failed_commands_for(&self, motor_id: u8) -> PyResult<u64> {
