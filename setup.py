@@ -9,6 +9,7 @@ import subprocess
 
 from setuptools import find_packages, setup
 from setuptools.command.build_ext import build_ext
+from setuptools.command.build_py import build_py
 from setuptools_rust import Binding, RustExtension
 
 with open("README.md", "r", encoding="utf-8") as f:
@@ -47,6 +48,12 @@ class RustBuildExt(build_ext):
         super().run()
 
 
+class CustomBuild(build_py):
+    def run(self) -> None:
+        self.run_command("build_ext")
+        super().run()
+
+
 setup(
     name="actuator",
     version=version,
@@ -69,5 +76,8 @@ setup(
     extras_require={"dev": requirements_dev},
     include_package_data=True,
     packages=find_packages(include=["actuator"]),
-    cmdclass={"build_ext": RustBuildExt},
+    cmdclass={
+        "build_ext": RustBuildExt,
+        "build_py": CustomBuild,
+    },
 )
