@@ -8,7 +8,7 @@ resolver = "2"
 
 [workspace.package]
 
-version = "0.2.9"
+version = "0.2.10"
 authors = ["Wesley Maa <wesley@kscale.dev>", "Pawel Budzianowski <pawel@kscale.dev>", "Benjamin Bolte <ben@kscale.dev>"]
 edition = "2021"
 description = "Actuator package"
