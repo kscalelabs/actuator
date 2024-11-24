@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "actuator/actuator",
     "actuator/bindings",
     "actuator/robstride",
 ]

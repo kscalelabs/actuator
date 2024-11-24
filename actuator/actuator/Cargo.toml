@@ -1,0 +1,37 @@
+[package]
+
+name = "actuator"
+build = "build.rs"
+readme = "README.md"
+description = "Actuator control service"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+
+async-trait = "^0.1"
+lazy_static = "^1.4.0"
+pest = "^2.5"
+pest_derive = "^2.5"
+prost = "0.13"
+prost-types = "0.13"
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = "^1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+tonic = { version = "^0.12", features = ["transport"] }
+
+[build-dependencies]
+
+prost-build = "^0.13.3"
+tonic-build = "^0.12"
+
+[lib]
+
+name = "actuator"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"

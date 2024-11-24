@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package actuator.common;
+
+import "google/protobuf/empty.proto";
+import "google/longrunning/operations.proto";
+
+service ActuatorController {
+    rpc CommandActuators(CommandActuatorsRequest) returns (CommandActuatorsResponse) {}
+}
+
+message ActuatorCommand {
+    uint32 actuator_id = 1;
+    double position = 2;
+    double velocity = 3;
+    double torque = 4;
+    double kp = 5;
+    double kd = 6;
+}
+
+message ActuatorStatus {
+    uint32 actuator_id = 1;
+    double position = 2;
+    double velocity = 3;
+}
+
+message CommandActuatorsRequest {
+    repeated ActuatorCommand commands = 1;
+}
+
+message CommandActuatorsResponse {
+    repeated ActuatorStatus statuses = 1;
+    ResponseCode response_code = 2;
+}
+
+enum ResponseCode {
+    OK = 0;
+    ERROR = 1;
+}

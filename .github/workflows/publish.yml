@@ -42,11 +42,6 @@ jobs:
           pip install cibuildwheel
         shell: bash
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-        with:
-          platforms: all
-
       - name: Build package
         env:
           CIBW_SKIP: "pp* *-musllinux*"  # Skip PyPy and musllinux builds
