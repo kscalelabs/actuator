@@ -131,6 +131,20 @@ impl MotorsSupervisor {
                 return;
             }
 
+            // Add another pre-flight check to see wait for feedback from each motor and check that they are all valid (MotorMode::Motor).
+            // Additionally, get the current position of each motor and check that it is not zero (should always be positive).
+            // Save the position and set the target_ for each motor to this position.
+            // The below is cursor generated code and definitely doesn't work.
+            let mut all_motors_valid = true;
+            let mut motor_positions = HashMap::<u8, f32>::new();
+            for motor_id in motors.motor_configs.keys() {
+                let feedback = motors.get_feedback(*motor_id).unwrap();
+                if feedback.mode != MotorMode::Motor {
+                    all_motors_valid = false;
+                }
+                motor_positions.insert(*motor_id, feedback.p);
+            }
+
             info!("Pre-flight checks completed successfully");
             let _ = motors.send_set_mode(RunMode::MitMode);
 
