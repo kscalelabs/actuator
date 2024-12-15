@@ -1,15 +1,9 @@
 use pyo3::prelude::*;
-use pyo3_stub_gen::define_stub_info_gatherer;
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
-use robstride::{
-    motor_mode_from_str as robstride_motor_mode_from_str,
-    motor_type_from_str as robstride_motor_type_from_str, MotorConfig as RobstrideMotorConfig,
-    MotorControlParams as RobstrideMotorControlParams, MotorFeedback as RobstrideMotorFeedback,
-    MotorType as RobstrideMotorType, Motors as RobstrideMotors,
-    MotorsSupervisor as RobstrideMotorsSupervisor, ROBSTRIDE_CONFIGS as RobstrideDefaultConfigs,
-};
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use robstride::{CH341Transport, ControlConfig, SocketCanTransport, Supervisor, TransportType};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use std::time::Duration;
+use tokio::runtime::Runtime;
 
 #[pyfunction]
 #[gen_stub_pyfunction]
@@ -17,603 +11,236 @@ fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-#[gen_stub_pyclass]
 #[pyclass]
-struct PyRobstrideMotors {
-    inner: RobstrideMotors,
+struct PyRobstrideActuatorCommand {
+    #[pyo3(get, set)]
+    actuator_id: u32,
+    #[pyo3(get, set)]
+    position: Option<f64>,
+    #[pyo3(get, set)]
+    velocity: Option<f64>,
+    #[pyo3(get, set)]
+    torque: Option<f64>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideMotors {
+impl PyRobstrideActuatorCommand {
     #[new]
-    #[pyo3(signature = (port_name, motor_infos, verbose = false))]
-    fn new(port_name: String, motor_infos: HashMap<u8, String>, verbose: bool) -> PyResult<Self> {
-        let motor_infos = motor_infos
-            .into_iter()
-            .map(|(id, type_str)| {
-                let motor_type = robstride_motor_type_from_str(type_str.as_str())?;
-                Ok((id, motor_type))
-            })
-            .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
-
-        let motors = RobstrideMotors::new(&port_name, &motor_infos, verbose)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
-        Ok(PyRobstrideMotors { inner: motors })
-    }
-
-    fn send_get_mode(&mut self) -> PyResult<HashMap<u8, String>> {
-        self.inner
-            .send_get_mode()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
-            .into_iter()
-            .map(|(k, v)| Ok((k, format!("{:?}", v))))
-            .collect()
-    }
-
-    fn set_torque_limit(&mut self, motor_id: u8, torque_limit: f32) -> PyResult<f32> {
-        self.inner.set_torque_limit(motor_id, torque_limit).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        Ok(torque_limit)
-    }
-
-    fn set_speed_limit(&mut self, motor_id: u8, speed_limit: f32) -> PyResult<f32> {
-        self.inner.set_speed_limit(motor_id, speed_limit).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        Ok(speed_limit)
-    }
-
-    fn set_current_limit(&mut self, motor_id: u8, current_limit: f32) -> PyResult<f32> {
-        self.inner.set_current_limit(motor_id, current_limit).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        Ok(current_limit)
-    }
-
-    fn send_resets(&mut self) -> PyResult<()> {
-        self.inner
-            .send_resets()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn send_starts(&mut self) -> PyResult<()> {
-        self.inner
-            .send_starts()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn send_motor_controls(
-        &mut self,
-        motor_controls: HashMap<u8, PyRobstrideMotorControlParams>,
-        serial: bool,
-    ) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
-        let motor_controls: HashMap<u8, RobstrideMotorControlParams> = motor_controls
-            .into_iter()
-            .map(|(k, v)| (k, v.into()))
-            .collect();
-
-        self.inner
-            .send_motor_controls(&motor_controls, serial)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
-            .into_iter()
-            .map(|(k, v)| Ok((k, v.into())))
-            .collect()
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("PyRobstrideMotors"))
-    }
-
-    #[staticmethod]
-    fn get_default_configs() -> PyResult<HashMap<PyRobstrideMotorType, PyRobstrideMotorConfig>> {
-        Ok(RobstrideDefaultConfigs
-            .iter()
-            .map(|(motor_type, config)| ((*motor_type).into(), (*config).into()))
-            .collect())
-    }
-}
-
-#[gen_stub_pyclass]
-#[pyclass]
-#[derive(Clone)]
-struct PyRobstrideMotorFeedback {
-    #[pyo3(get)]
-    can_id: u8,
-    #[pyo3(get)]
-    position: f32,
-    #[pyo3(get)]
-    velocity: f32,
-    #[pyo3(get)]
-    torque: f32,
-    #[pyo3(get)]
-    mode: String,
-    #[pyo3(get)]
-    faults: u16,
-}
-
-#[gen_stub_pymethods]
-#[pymethods]
-impl PyRobstrideMotorFeedback {
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "PyRobstrideMotorFeedback(can_id={}, position={:.2}, velocity={:.2}, torque={:.2}, mode='{}', faults={})",
-            self.can_id, self.position, self.velocity, self.torque, self.mode, self.faults
-        ))
-    }
-
-    #[staticmethod]
-    fn create_feedback(
-        can_id: u8,
-        position: f32,
-        velocity: f32,
-        torque: f32,
-        mode: String,
-        faults: u16,
-    ) -> PyResult<Self> {
-        let feedback = RobstrideMotorFeedback {
-            can_id,
-            position,
-            velocity,
-            torque,
-            mode: robstride_motor_mode_from_str(mode.as_str())?,
-            faults,
-        };
-
-        Ok(feedback.into())
-    }
-}
-
-impl From<RobstrideMotorFeedback> for PyRobstrideMotorFeedback {
-    fn from(feedback: RobstrideMotorFeedback) -> Self {
-        PyRobstrideMotorFeedback {
-            can_id: feedback.can_id,
-            position: feedback.position,
-            velocity: feedback.velocity,
-            torque: feedback.torque,
-            mode: format!("{:?}", feedback.mode),
-            faults: feedback.faults,
+    fn new(actuator_id: u32) -> Self {
+        Self {
+            actuator_id,
+            position: None,
+            velocity: None,
+            torque: None,
         }
     }
 }
 
-#[gen_stub_pyclass]
 #[pyclass]
-#[derive(FromPyObject)]
-struct PyRobstrideMotorControlParams {
+struct PyRobstrideConfigureRequest {
     #[pyo3(get, set)]
-    position: f32,
+    actuator_id: u32,
     #[pyo3(get, set)]
-    velocity: f32,
+    kp: Option<f64>,
     #[pyo3(get, set)]
-    kp: f32,
+    kd: Option<f64>,
     #[pyo3(get, set)]
-    kd: f32,
+    max_torque: Option<f64>,
     #[pyo3(get, set)]
-    torque: f32,
+    torque_enabled: Option<bool>,
+    #[pyo3(get, set)]
+    zero_position: Option<bool>,
+    #[pyo3(get, set)]
+    new_actuator_id: Option<u32>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideMotorControlParams {
+impl PyRobstrideConfigureRequest {
     #[new]
-    fn new(position: f32, velocity: f32, kp: f32, kd: f32, torque: f32) -> Self {
-        PyRobstrideMotorControlParams {
-            position,
-            velocity,
-            kp,
-            kd,
-            torque,
-        }
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "PyRobstrideMotorControlParams(position={:.2}, velocity={:.2}, kp={:.2}, kd={:.2}, torque={:.2})",
-            self.position, self.velocity, self.kp, self.kd, self.torque
-        ))
-    }
-}
-
-impl From<PyRobstrideMotorControlParams> for RobstrideMotorControlParams {
-    fn from(params: PyRobstrideMotorControlParams) -> Self {
-        RobstrideMotorControlParams {
-            position: params.position,
-            velocity: params.velocity,
-            kp: params.kp,
-            kd: params.kd,
-            torque: params.torque,
+    fn new(actuator_id: u32) -> Self {
+        Self {
+            actuator_id,
+            kp: None,
+            kd: None,
+            max_torque: None,
+            torque_enabled: None,
+            zero_position: None,
+            new_actuator_id: None,
         }
     }
 }
 
-impl From<RobstrideMotorControlParams> for PyRobstrideMotorControlParams {
-    fn from(params: RobstrideMotorControlParams) -> Self {
-        PyRobstrideMotorControlParams {
-            position: params.position,
-            velocity: params.velocity,
-            kp: params.kp,
-            kd: params.kd,
-            torque: params.torque,
-        }
-    }
-}
-
-#[gen_stub_pyclass]
 #[pyclass]
-struct PyRobstrideMotorsSupervisor {
-    inner: RobstrideMotorsSupervisor,
+struct PyRobstrideActuatorState {
+    #[pyo3(get)]
+    actuator_id: u32,
+    #[pyo3(get)]
+    online: bool,
+    #[pyo3(get)]
+    position: Option<f64>,
+    #[pyo3(get)]
+    velocity: Option<f64>,
+    #[pyo3(get)]
+    torque: Option<f64>,
+    #[pyo3(get)]
+    temperature: Option<f64>,
 }
 
-#[gen_stub_pymethods]
+#[pyclass]
+struct PyRobstrideActuator {
+    supervisor: Arc<Mutex<Supervisor>>,
+    rt: Runtime,
+}
+
 #[pymethods]
-impl PyRobstrideMotorsSupervisor {
+impl PyRobstrideActuator {
     #[new]
-    #[pyo3(signature = (port_name, motor_infos, verbose = false, target_update_rate = 50.0, zero_on_init = false))]
     fn new(
-        port_name: String,
-        motor_infos: HashMap<u8, String>,
-        verbose: bool,
-        target_update_rate: f64,
-        zero_on_init: bool,
+        ports: Vec<String>,
+        actuator_timeout: f64,
+        polling_interval: f64,
+        py_actuators_config: Vec<(u8, PyRobstrideActuatorConfig)>,
     ) -> PyResult<Self> {
-        let motor_infos = motor_infos
-            .into_iter()
-            .map(|(id, type_str)| {
-                let motor_type = robstride_motor_type_from_str(type_str.as_str())?;
-                Ok((id, motor_type))
-            })
-            .collect::<PyResult<HashMap<u8, RobstrideMotorType>>>()?;
+        let rt = Runtime::new().unwrap();
+        
+        let actuators_config: Vec<(u8, robstride::ActuatorConfiguration)> = 
+            py_actuators_config.into_iter()
+                .map(|(id, config)| (id, config.into()))
+                .collect();
 
-        let controller = RobstrideMotorsSupervisor::new(
-            &port_name,
-            &motor_infos,
-            verbose,
-            target_update_rate,
-            zero_on_init,
-        )
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        let supervisor = rt.block_on(async {
+            let mut supervisor = Supervisor::new(Duration::from_secs_f64(actuator_timeout))?;
 
-        Ok(PyRobstrideMotorsSupervisor { inner: controller })
+            // Add transports
+            for port in &ports {
+                if port.starts_with("/dev/tty") {
+                    let serial = CH341Transport::new(port.clone()).await?;
+                    supervisor
+                        .add_transport(port.clone(), TransportType::CH341(serial))
+                        .await?;
+                } else if port.starts_with("can") {
+                    let can = SocketCanTransport::new(port.clone()).await?;
+                    supervisor
+                        .add_transport(port.clone(), TransportType::SocketCAN(can))
+                        .await?;
+                } else {
+                    return Err(eyre::eyre!("Invalid port: {}", port));
+                }
+            }
+
+            // Start supervisor task
+            let mut supervisor_runner = supervisor.clone_controller();
+            tokio::spawn(async move {
+                if let Err(e) = supervisor_runner
+                    .run(Duration::from_secs_f64(polling_interval))
+                    .await
+                {
+                    tracing::error!("Supervisor task failed: {}", e);
+                }
+            });
+
+            // Scan for motors
+            for port in &ports {
+                let discovered_ids = supervisor.scan_bus(0xFD, port, &actuators_config).await?;
+                for (motor_id, _) in &actuators_config {
+                    if !discovered_ids.contains(motor_id) {
+                        tracing::warn!("Configured motor not found - ID: {}", motor_id);
+                    }
+                }
+            }
+
+            Ok::<_, eyre::Error>(supervisor)
+        })?;
+
+        Ok(PyRobstrideActuator {
+            supervisor: Arc::new(Mutex::new(supervisor)),
+            rt,
+        })
     }
 
-    fn set_all_params(&self, params: HashMap<u8, PyRobstrideMotorControlParams>) -> PyResult<()> {
-        let params: HashMap<u8, RobstrideMotorControlParams> = params
-            .into_iter()
-            .map(|(k, v)| (k, RobstrideMotorControlParams::from(v)))
-            .collect();
-        self.inner
-            .set_all_params(params)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    fn command_actuators(&self, commands: Vec<PyRobstrideActuatorCommand>) -> PyResult<Vec<bool>> {
+        self.rt.block_on(async {
+            let mut results = vec![];
+            let mut supervisor = self.supervisor.lock().await;
+            
+            for cmd in commands {
+                let result = supervisor
+                    .command(
+                        cmd.actuator_id as u8,
+                        cmd.position.map(|p| p.to_radians() as f32).unwrap_or(0.0),
+                        cmd.velocity.map(|v| v.to_radians() as f32).unwrap_or(0.0),
+                        cmd.torque.map(|t| t as f32).unwrap_or(0.0),
+                    )
+                    .await;
+                results.push(result.is_ok());
+            }
+            Ok(results)
+        })
     }
 
-    fn set_params(&self, motor_id: u8, params: PyRobstrideMotorControlParams) -> PyResult<()> {
-        self.inner
-            .set_params(motor_id, RobstrideMotorControlParams::from(params))
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    fn configure_actuator(&self, config: PyRobstrideConfigureRequest) -> PyResult<bool> {
+        self.rt.block_on(async {
+            let mut supervisor = self.supervisor.lock().await;
+            
+            let control_config = ControlConfig {
+                kp: config.kp.unwrap_or(0.0) as f32,
+                kd: config.kd.unwrap_or(0.0) as f32,
+                max_torque: Some(config.max_torque.unwrap_or(2.0) as f32),
+                max_velocity: Some(5.0),
+                max_current: Some(10.0),
+            };
+
+            let result = supervisor.configure(config.actuator_id as u8, control_config).await;
+
+            if let Some(torque_enabled) = config.torque_enabled {
+                if torque_enabled {
+                    supervisor.enable(config.actuator_id as u8).await?;
+                } else {
+                    supervisor.disable(config.actuator_id as u8, true).await?;
+                }
+            }
+
+            if let Some(true) = config.zero_position {
+                supervisor.zero(config.actuator_id as u8).await?;
+            }
+
+            if let Some(new_id) = config.new_actuator_id {
+                supervisor
+                    .change_id(config.actuator_id as u8, new_id as u8)
+                    .await?;
+            }
+
+            Ok(result.is_ok())
+        })
     }
 
-    fn set_positions(&self, positions: HashMap<u8, f32>) -> PyResult<()> {
-        self.inner
-            .set_positions(positions)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_position(&self, motor_id: u8, position: f32) -> PyResult<f32> {
-        self.inner
-            .set_position(motor_id, position)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn get_position(&self, motor_id: u8) -> PyResult<f32> {
-        self.inner
-            .get_position(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_velocities(&self, velocities: HashMap<u8, f32>) -> PyResult<()> {
-        self.inner
-            .set_velocities(velocities)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_velocity(&self, motor_id: u8, velocity: f32) -> PyResult<f32> {
-        self.inner
-            .set_velocity(motor_id, velocity)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn get_velocity(&self, motor_id: u8) -> PyResult<f32> {
-        self.inner
-            .get_velocity(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_kp(&self, motor_id: u8, kp: f32) -> PyResult<f32> {
-        self.inner
-            .set_kp(motor_id, kp)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn get_kp(&self, motor_id: u8) -> PyResult<f32> {
-        self.inner
-            .get_kp(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_kd(&self, motor_id: u8, kd: f32) -> PyResult<f32> {
-        self.inner
-            .set_kd(motor_id, kd)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn get_kd(&self, motor_id: u8) -> PyResult<f32> {
-        self.inner
-            .get_kd(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_torque(&self, motor_id: u8, torque: f32) -> PyResult<f32> {
-        self.inner
-            .set_torque(motor_id, torque)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn get_torque(&self, motor_id: u8) -> PyResult<f32> {
-        self.inner
-            .get_torque(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> PyResult<f32> {
-        self.inner
-            .set_torque_limit(motor_id, torque_limit)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_speed_limit(&self, motor_id: u8, speed_limit: f32) -> PyResult<f32> {
-        self.inner
-            .set_speed_limit(motor_id, speed_limit)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn set_current_limit(&self, motor_id: u8, current_limit: f32) -> PyResult<f32> {
-        self.inner
-            .set_current_limit(motor_id, current_limit)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn add_motor_to_zero(&self, motor_id: u8) -> PyResult<()> {
-        self.inner
-            .add_motor_to_zero(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn get_latest_feedback(&self) -> PyResult<HashMap<u8, PyRobstrideMotorFeedback>> {
-        Ok(self.inner
-            .get_latest_feedback()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
-            .into_iter()
-            .map(|(k, v)| (k, v.into()))
-            .collect())
-    }
-
-    fn toggle_pause(&self) -> PyResult<()> {
-        self.inner
-            .toggle_pause()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn stop(&self) -> PyResult<()> {
-        self.inner
-            .stop()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        let motor_count = self.inner.get_latest_feedback().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?.len();
-        Ok(format!(
-            "PyRobstrideMotorsSupervisor(motor_count={})",
-            motor_count
-        ))
-    }
-
-    #[getter]
-    fn total_commands(&self) -> PyResult<u64> {
-        self.inner.get_total_commands().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn failed_commands_for(&self, motor_id: u8) -> PyResult<u64> {
-        self.inner
-            .get_failed_commands(motor_id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn reset_command_counters(&self) -> PyResult<()> {
-        self.inner
-            .reset_command_counters()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn is_running(&self) -> PyResult<bool> {
-        self.inner
-            .is_running()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    #[setter]
-    fn max_update_rate(&self, rate: f64) -> PyResult<()> {
-        self.inner
-            .set_max_update_rate(rate)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    #[getter]
-    fn actual_update_rate(&self) -> PyResult<f64> {
-        self.inner
-            .get_actual_update_rate()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    fn toggle_serial(&self) -> PyResult<bool> {
-        self.inner
-            .toggle_serial()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-
-    #[getter]
-    fn serial(&self) -> PyResult<bool> {
-        self.inner.get_serial().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-    }
-}
-
-#[gen_stub_pyclass]
-#[pyclass]
-#[derive(Clone)]
-struct PyRobstrideMotorConfig {
-    #[pyo3(get)]
-    p_min: f32,
-    #[pyo3(get)]
-    p_max: f32,
-    #[pyo3(get)]
-    v_min: f32,
-    #[pyo3(get)]
-    v_max: f32,
-    #[pyo3(get)]
-    kp_min: f32,
-    #[pyo3(get)]
-    kp_max: f32,
-    #[pyo3(get)]
-    kd_min: f32,
-    #[pyo3(get)]
-    kd_max: f32,
-    #[pyo3(get)]
-    t_min: f32,
-    #[pyo3(get)]
-    t_max: f32,
-    #[pyo3(get)]
-    zero_on_init: bool,
-    #[pyo3(get)]
-    can_timeout_command: u16,
-    #[pyo3(get)]
-    can_timeout_factor: f32,
-}
-
-impl From<RobstrideMotorConfig> for PyRobstrideMotorConfig {
-    fn from(config: RobstrideMotorConfig) -> Self {
-        PyRobstrideMotorConfig {
-            p_min: config.p_min,
-            p_max: config.p_max,
-            v_min: config.v_min,
-            v_max: config.v_max,
-            kp_min: config.kp_min,
-            kp_max: config.kp_max,
-            kd_min: config.kd_min,
-            kd_max: config.kd_max,
-            t_min: config.t_min,
-            t_max: config.t_max,
-            zero_on_init: config.zero_on_init,
-            can_timeout_command: config.can_timeout_command,
-            can_timeout_factor: config.can_timeout_factor,
-        }
-    }
-}
-
-#[gen_stub_pyclass]
-#[pyclass]
-#[derive(Copy, Clone, Debug, Eq)]
-struct PyRobstrideMotorType {
-    value: u8,
-}
-
-impl Hash for PyRobstrideMotorType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.value.hash(state);
-    }
-}
-
-impl PartialEq for PyRobstrideMotorType {
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
-    }
-}
-
-#[gen_stub_pymethods]
-#[pymethods]
-impl PyRobstrideMotorType {
-    #[classattr]
-    const TYPE00: Self = PyRobstrideMotorType { value: 0 };
-    #[classattr]
-    const TYPE01: Self = PyRobstrideMotorType { value: 1 };
-    #[classattr]
-    const TYPE02: Self = PyRobstrideMotorType { value: 2 };
-    #[classattr]
-    const TYPE03: Self = PyRobstrideMotorType { value: 3 };
-    #[classattr]
-    const TYPE04: Self = PyRobstrideMotorType { value: 4 };
-
-    fn __repr__(&self) -> PyResult<String> {
-        let type_name = match self.value {
-            0 => "TYPE00",
-            1 => "TYPE01",
-            2 => "TYPE02",
-            3 => "TYPE03",
-            4 => "TYPE04",
-            _ => "Unknown",
-        };
-        Ok(format!("PyRobstrideMotorType::{}", type_name))
-    }
-
-    #[staticmethod]
-    fn from_str(s: &str) -> PyResult<Self> {
-        let motor_type = robstride_motor_type_from_str(s)?;
-        Ok(PyRobstrideMotorType::from(motor_type))
-    }
-
-    fn __hash__(&self) -> PyResult<isize> {
-        Ok(self.value as isize)
-    }
-
-    fn __eq__(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
-        if let Ok(other) = other.extract::<PyRobstrideMotorType>() {
-            Ok(self.value == other.value)
-        } else {
-            Ok(false)
-        }
-    }
-}
-
-impl From<RobstrideMotorType> for PyRobstrideMotorType {
-    fn from(motor_type: RobstrideMotorType) -> Self {
-        match motor_type {
-            RobstrideMotorType::Type00 => PyRobstrideMotorType::TYPE00,
-            RobstrideMotorType::Type01 => PyRobstrideMotorType::TYPE01,
-            RobstrideMotorType::Type02 => PyRobstrideMotorType::TYPE02,
-            RobstrideMotorType::Type03 => PyRobstrideMotorType::TYPE03,
-            RobstrideMotorType::Type04 => PyRobstrideMotorType::TYPE04,
-        }
-    }
-}
-
-impl From<PyRobstrideMotorType> for RobstrideMotorType {
-    fn from(py_motor_type: PyRobstrideMotorType) -> Self {
-        match py_motor_type.value {
-            0 => RobstrideMotorType::Type00,
-            1 => RobstrideMotorType::Type01,
-            2 => RobstrideMotorType::Type02,
-            3 => RobstrideMotorType::Type03,
-            4 => RobstrideMotorType::Type04,
-            _ => RobstrideMotorType::Type04,
-        }
+    fn get_actuators_state(&self, actuator_ids: Vec<u32>) -> PyResult<Vec<PyRobstrideActuatorState>> {
+        self.rt.block_on(async {
+            let mut responses = vec![];
+            let supervisor = self.supervisor.lock().await;
+            
+            for id in actuator_ids {
+                if let Ok(Some((feedback, ts))) = supervisor.get_feedback(id as u8).await {
+                    responses.push(PyRobstrideActuatorState {
+                        actuator_id: id,
+                        online: ts.elapsed().unwrap_or(Duration::from_secs(1)) < Duration::from_secs(1),
+                        position: Some(feedback.angle.to_degrees() as f64),
+                        velocity: Some(feedback.velocity.to_degrees() as f64),
+                        torque: Some(feedback.torque as f64),
+                        temperature: Some(feedback.temperature as f64),
+                    });
+                }
+            }
+            Ok(responses)
+        })
     }
 }
 
 #[pymodule]
-fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(get_version, m)?)?;
-    m.add_class::<PyRobstrideMotors>()?;
-    m.add_class::<PyRobstrideMotorFeedback>()?;
-    m.add_class::<PyRobstrideMotorsSupervisor>()?;
-    m.add_class::<PyRobstrideMotorControlParams>()?;
-    m.add_class::<PyRobstrideMotorConfig>()?;
-    m.add_class::<PyRobstrideMotorType>()?;
+fn robstride_bindings(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyRobstrideActuator>()?;
+    m.add_class::<PyRobstrideActuatorCommand>()?;
+    m.add_class::<PyRobstrideConfigureRequest>()?;
+    m.add_class::<PyRobstrideActuatorState>()?;
     Ok(())
 }
-
-define_stub_info_gatherer!(stub_info);
