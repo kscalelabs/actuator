@@ -24,6 +24,7 @@ fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
 struct PyRobstrideActuatorCommand {
@@ -37,6 +38,7 @@ struct PyRobstrideActuatorCommand {
     torque: Option<f64>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyRobstrideActuatorCommand {
     #[new]
@@ -50,6 +52,7 @@ impl PyRobstrideActuatorCommand {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
 struct PyRobstrideConfigureRequest {
@@ -69,6 +72,7 @@ struct PyRobstrideConfigureRequest {
     new_actuator_id: Option<u32>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyRobstrideConfigureRequest {
     #[new]
@@ -85,6 +89,7 @@ impl PyRobstrideConfigureRequest {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
 struct PyRobstrideActuatorState {
@@ -102,6 +107,7 @@ struct PyRobstrideActuatorState {
     temperature: Option<f64>,
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
 struct PyRobstrideActuatorConfig {
@@ -113,6 +119,7 @@ struct PyRobstrideActuatorConfig {
     max_velocity: Option<f64>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyRobstrideActuatorConfig {
     #[new]
@@ -125,12 +132,14 @@ impl PyRobstrideActuatorConfig {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 struct PyRobstrideActuator {
     supervisor: Arc<Mutex<Supervisor>>,
     rt: Runtime,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyRobstrideActuator {
     #[new]
