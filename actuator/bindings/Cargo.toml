@@ -19,5 +19,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = ">= 0.21.0", features = ["extension-module"] }
 pyo3-stub-gen = ">= 0.6.0"
 
-# Other packages in the workspace.
 robstride = { path = "../robstride" }
+tokio = { version = "1.0", features = ["rt", "sync", "time"] }
+eyre = "0.6"
+tracing = "0.1"
