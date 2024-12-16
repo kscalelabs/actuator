@@ -1,623 +1,800 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, RwLock};
-use std::thread;
-use std::time::Duration;
+use eyre::Result;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+use tokio::sync::{mpsc, RwLock};
+use tokio::time;
+use tracing::{debug, error, info, trace, warn};
 
-use crate::motor::{MotorControlParams, MotorFeedback, MotorSdoParams, Motors};
-use crate::types::{MotorType, RunMode};
-use log::{error, info};
-use eyre::{eyre, Result};
+use crate::{
+    actuator::{normalize_value, TypedCommandData, TypedFeedbackData},
+    actuator_types::ActuatorConfiguration,
+    robstride00::{RobStride00, RobStride00Command, RobStride00Feedback, RobStride00Parameter},
+    robstride01::{RobStride01, RobStride01Command, RobStride01Feedback, RobStride01Parameter},
+    robstride02::{RobStride02, RobStride02Command, RobStride02Feedback, RobStride02Parameter},
+    robstride03::{RobStride03, RobStride03Command, RobStride03Feedback, RobStride03Parameter},
+    robstride04::{RobStride04, RobStride04Command, RobStride04Feedback, RobStride04Parameter},
+    transport::TransportType,
+    Actuator, Command, ControlCommand, FeedbackFrame, Frame, Protocol, TxCommand,
+};
+use crate::{ActuatorType, FaultFeedback, ObtainIDCommand};
 
-pub struct MotorsSupervisor {
-    motors: Arc<Mutex<Motors>>,
-    target_params: Arc<RwLock<HashMap<u8, MotorControlParams>>>,
-    running: Arc<RwLock<bool>>,
-    latest_feedback: Arc<RwLock<HashMap<u8, MotorFeedback>>>,
-    motors_to_zero: Arc<Mutex<HashSet<u8>>>,
-    motors_to_set_sdo: Arc<Mutex<HashMap<u8, MotorSdoParams>>>,
-    paused: Arc<RwLock<bool>>,
-    restart: Arc<Mutex<bool>>,
-    total_commands: Arc<RwLock<u64>>,
-    failed_commands: Arc<RwLock<HashMap<u8, u64>>>,
-    max_update_rate: Arc<RwLock<f64>>,
-    actual_update_rate: Arc<RwLock<f64>>,
-    serial: Arc<RwLock<bool>>,
+// Add the StateUpdate enum at the top of the file
+#[derive(Debug)]
+enum StateUpdate {
+    Feedback(FeedbackFrame),
+    ObtainID(u8),
+    Fault(FaultFeedback),
 }
 
-impl MotorsSupervisor {
-    pub fn new(
-        port_name: &str,
-        motor_infos: &HashMap<u8, MotorType>,
-        verbose: bool,
-        max_update_rate: f64,
-        zero_on_init: bool,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        // Initialize Motors
-        let motors = Motors::new(port_name, motor_infos, verbose)?;
+// Store the latest feedback with timestamp
+#[derive(Clone, Debug)]
+pub struct ActuatorState {
+    pub feedback: Option<FeedbackFrame>,
+    pub last_feedback: SystemTime,
+    pub ready: bool,
+    pub enabled: bool,
+    pub control_config: ControlConfig,
+    pub control_command: ControlCommand,
+    pub configuration: ActuatorConfiguration,
+    pub messages_received: u64,
+    pub half_revolutions: i32,
+    pub actuator_type: ActuatorType,
+}
 
-        // Get default KP/KD values for all motors.
-        let target_params = motors
-            .motor_configs
-            .keys()
-            .map(|id| {
-                (
-                    *id,
-                    MotorControlParams {
-                        position: 0.0,
-                        velocity: 0.0,
-                        kp: 0.0,
-                        kd: 0.0,
-                        torque: 0.0,
-                    },
-                )
-            })
-            .collect::<HashMap<u8, MotorControlParams>>();
+#[derive(Clone, Debug)]
+pub struct ControlConfig {
+    pub kp: f32,
+    pub kd: f32,
+    pub max_torque: Option<f32>,
+    pub max_velocity: Option<f32>,
+    pub max_current: Option<f32>,
+}
 
-        // Find motors that need to be zeroed on initialization.
-        let zero_on_init_motors = motors
-            .motor_configs
-            .iter()
-            .filter(|(_, &config)| config.zero_on_init || zero_on_init)
-            .map(|(&id, _)| id)
-            .collect::<HashSet<u8>>();
+pub struct TransportHandler {
+    #[allow(unused)]
+    protocol: Protocol,
+    tx: mpsc::Sender<TxCommand>,
+    #[allow(unused)]
+    rx: mpsc::Receiver<TxCommand>,
+}
 
-        let motor_ids: Vec<u8> = motor_infos.keys().cloned().collect();
-        let total_commands = 0;
-        let failed_commands = motor_ids.iter().map(|&id| (id, 0)).collect();
+struct ActuatorRecord {
+    actuator: Box<dyn Actuator>,
+    state: ActuatorState,
+}
 
-        let controller = MotorsSupervisor {
-            motors: Arc::new(Mutex::new(motors)),
-            target_params: Arc::new(RwLock::new(target_params)),
-            running: Arc::new(RwLock::new(true)),
-            latest_feedback: Arc::new(RwLock::new(HashMap::new())),
-            motors_to_zero: Arc::new(Mutex::new(zero_on_init_motors)),
-            motors_to_set_sdo: Arc::new(Mutex::new(HashMap::new())),
-            paused: Arc::new(RwLock::new(false)),
-            restart: Arc::new(Mutex::new(false)),
-            total_commands: Arc::new(RwLock::new(total_commands)),
-            failed_commands: Arc::new(RwLock::new(failed_commands)),
-            max_update_rate: Arc::new(RwLock::new(max_update_rate)),
-            actual_update_rate: Arc::new(RwLock::new(0.0)),
-            serial: Arc::new(RwLock::new(true)),
+pub struct Supervisor {
+    actuators: Arc<RwLock<HashMap<u8, ActuatorRecord>>>,
+    transports: Arc<RwLock<HashMap<String, TransportHandler>>>,
+    discovered_ids: Arc<RwLock<Vec<u8>>>,
+    last_stats_time: SystemTime,
+    feedback_timeout: Duration,
+    state_update_tx: mpsc::Sender<StateUpdate>,
+}
+
+fn half_revolutions(degrees: f32) -> i32 {
+    if degrees < 0.0 {
+        (degrees / 180.0).ceil() as i32
+    } else {
+        (degrees / 180.0).floor() as i32
+    }
+}
+
+fn normalize_degrees(degrees: f32) -> (f32, i32) {
+    let rotations = half_revolutions(degrees);
+    let normalized =
+        degrees - 360.0 * ((rotations + if rotations >= 0 { 1 } else { -1 }) / 2) as f32;
+    (normalized, rotations)
+}
+
+fn normalize_radians(radians: f32) -> (f32, i32) {
+    let degrees = radians.to_degrees();
+    let (normalized_deg, rotations) = normalize_degrees(degrees);
+    (normalized_deg.to_radians(), rotations)
+}
+
+fn denormalize_degrees(normalized_angle: f32, half_rotations: i32) -> f32 {
+    if half_rotations >= 0 {
+        normalized_angle + 360.0 * ((half_rotations + 1) / 2) as f32
+    } else {
+        normalized_angle + 360.0 * (half_rotations / 2) as f32
+    }
+}
+
+fn denormalize_radians(normalized_radians: f32, half_rotations: i32) -> f32 {
+    let normalized_degrees = normalized_radians.to_degrees();
+    let original_degrees = denormalize_degrees(normalized_degrees, half_rotations);
+    original_degrees.to_radians()
+}
+
+impl Supervisor {
+    pub fn new(feedback_timeout: Duration) -> Result<Self> {
+        let (state_update_tx, mut state_update_rx) = mpsc::channel(32);
+
+        let supervisor = Self {
+            actuators: Arc::new(RwLock::new(HashMap::new())),
+            transports: Arc::new(RwLock::new(HashMap::new())),
+            discovered_ids: Arc::new(RwLock::new(Vec::new())),
+            last_stats_time: SystemTime::now(),
+            feedback_timeout,
+            state_update_tx,
         };
 
-        controller.start_control_thread();
+        // Spawn a task to handle state updates asynchronously
+        {
+            let actuators = supervisor.actuators.clone();
+            let discovered_ids = supervisor.discovered_ids.clone();
+            tokio::spawn(async move {
+                while let Some(update) = state_update_rx.recv().await {
+                    match update {
+                        StateUpdate::Feedback(feedback) => {
+                            let mut actuators_guard = actuators.write().await;
+                            if let Some(record) = actuators_guard.get_mut(&feedback.motor_id) {
+                                record.state.feedback = Some(feedback.clone());
+                                record.state.last_feedback = SystemTime::now();
+                                record.state.messages_received += 1;
+                                if record.state.messages_received >= 5 {
+                                    // robstride lol
+                                    // wait for 5 messages before marking as ready
+                                    record.state.ready = true;
+                                }
 
-        Ok(controller)
+                                if !record.state.enabled {
+                                    // save last pos to move to it on actuator enable
+                                    record.state.control_command.target_angle = feedback.angle;
+                                }
+
+                                let angle_rad =
+                                    RobStride04Feedback::from_feedback_frame(feedback).angle_rad;
+                                record.state.half_revolutions = normalize_radians(angle_rad).1;
+                            }
+                        }
+                        StateUpdate::ObtainID(motor_id) => {
+                            let mut discovered = discovered_ids.write().await;
+                            if !discovered.contains(&motor_id) {
+                                discovered.push(motor_id);
+                                info!("Discovered new actuator ID: {}", motor_id);
+                            }
+                        }
+                        StateUpdate::Fault(fault) => {
+                            warn!("Fault received: {:?}", fault);
+                        }
+                    }
+                }
+            });
+        }
+
+        Ok(supervisor)
     }
 
-    fn start_control_thread(&self) {
-        let motors = Arc::clone(&self.motors);
-        let target_params = Arc::clone(&self.target_params);
-        let running = Arc::clone(&self.running);
-        let latest_feedback = Arc::clone(&self.latest_feedback);
-        let motors_to_zero = Arc::clone(&self.motors_to_zero);
-        let paused = Arc::clone(&self.paused);
-        let restart = Arc::clone(&self.restart);
-        let motors_to_set_sdo = Arc::clone(&self.motors_to_set_sdo);
-        let total_commands = Arc::clone(&self.total_commands);
-        let failed_commands = Arc::clone(&self.failed_commands);
-        let max_update_rate = Arc::clone(&self.max_update_rate);
-        let actual_update_rate = Arc::clone(&self.actual_update_rate);
-        let serial = Arc::clone(&self.serial);
+    pub fn clone_controller(&self) -> Self {
+        Self {
+            actuators: self.actuators.clone(),
+            transports: self.transports.clone(),
+            discovered_ids: self.discovered_ids.clone(),
+            last_stats_time: self.last_stats_time,
+            feedback_timeout: self.feedback_timeout,
+            state_update_tx: self.state_update_tx.clone(),
+        }
+    }
 
-        thread::spawn(move || {
-            let motors_guard = match motors.lock() {
-                Ok(guard) => guard,
-                Err(err) => {
-                    error!("Failed to lock motors: {}", err);
-                    return;
-                }
-            };
-            let mut motors = motors_guard;
+    pub async fn add_transport(&self, name: String, transport: TransportType) -> Result<()> {
+        info!("Adding transport: {}", name);
+        let (tx, mut rx) = mpsc::channel(32);
 
-            // Runs pre-flight checks.
-            if let Err(err) = motors.send_resets() {
-                error!("Failed to send resets: {}", err);
-                if let Ok(mut running_guard) = running.write() {
-                    *running_guard = false;
+        let state_update_tx = self.state_update_tx.clone();
+        let name_clone = name.clone();
+        let name_for_log = name_clone.clone();
+
+        // Create callback for frame processing
+        let frame_callback: Arc<dyn Fn(u32, Vec<u8>) + Send + Sync + 'static> =
+            Arc::new(move |id: u32, data: Vec<u8>| {
+                let cmd = Command::from_can_packet(id, data.clone());
+                trace!(
+                    "Transport callback received: id={:x}, data={:02x?}, cmd={:?}",
+                    id,
+                    data,
+                    cmd
+                );
+
+                if let Ok(cmd_frame) = cmd.to_frame() {
+                    match cmd_frame {
+                        Frame::Feedback(feedback) => {
+                            let _ = state_update_tx.try_send(StateUpdate::Feedback(feedback));
+                        }
+                        Frame::ObtainID(oid) => {
+                            let _ = state_update_tx.try_send(StateUpdate::ObtainID(oid.host_id));
+                        }
+                        Frame::Fault(fault) => {
+                            let _ = state_update_tx.try_send(StateUpdate::Fault(fault));
+                        }
+                        _ => trace!("received: {:?}", cmd_frame),
+                    }
                 } else {
-                    error!("Failed to acquire write lock on running flag");
+                    warn!("Failed to parse frame from command: {:?}", cmd);
                 }
-                return;
-            }
-            if let Err(err) = motors.send_starts() {
-                error!("Failed to send starts: {}", err);
-                if let Ok(mut running_guard) = running.write() {
-                    *running_guard = false;
-                } else {
-                    error!("Failed to acquire write lock on running flag");
-                }
-                return;
-            }
+            });
 
-            info!("Pre-flight checks completed successfully");
-            let _ = motors.send_set_mode(RunMode::MitMode);
+        let protocol = Protocol::new(transport.clone(), frame_callback);
+        debug!("Created protocol for transport: {}", name);
 
-            let mut last_update_time = std::time::Instant::now();
-
+        // Spawn the transport handling task
+        let mut protocol_clone = protocol.clone();
+        tokio::spawn(async move {
+            info!("Starting transport handling task for {}", name_clone);
             loop {
-                {
-                    // If not running, break the loop.
-                    if let Ok(running_guard) = running.read() {
-                        if !*running_guard {
-                            break;
+                tokio::select! {
+                    // Handle incoming messages
+                    recv_result = protocol_clone.recv() => {
+                        match recv_result {
+                            Ok(_) => trace!("Received message successfully"),
+                            Err(e) => {
+                                error!("Transport receiver error: {}", e);
+                                break;
+                            }
                         }
-                    } else {
-                        error!("Failed to acquire read lock on running flag");
                     }
-                }
-
-                {
-                    // If paused, just wait a short time without sending any commands.
-                    if let Ok(paused_guard) = paused.read() {
-                        if *paused_guard {
-                            thread::sleep(Duration::from_millis(10));
-                            continue;
-                        }
-                    } else {
-                        error!("Failed to acquire read lock on paused flag");
-                    }
-                }
-
-                {
-                    // If restart is requested, reset and restart the motors.
-                    if let Ok(mut restart_guard) = restart.lock() {
-                        if *restart_guard {
-                            *restart_guard = false;
-                            let _ = motors.send_resets();
-                            let _ = motors.send_starts();
-                        }
-                    } else {
-                        error!("Failed to acquire lock on restart flag");
-                    }
-                }
-
-                let loop_start_time = std::time::Instant::now();
-
-                {
-                    // Send zero torque commands to motors that need to be zeroed.
-                    if let Ok(mut motor_ids_to_zero) = motors_to_zero.lock() {
-                        if !motor_ids_to_zero.is_empty() {
-                            let motor_ids = motor_ids_to_zero.iter().cloned().collect::<Vec<u8>>();
-                            let _ = motors.zero_motors(&motor_ids);
-                            motor_ids_to_zero.clear();
-                        }
-                    } else {
-                        error!("Failed to acquire lock on motors_to_zero");
-                    }
-                }
-
-                {
-                    // Send updated sdo parameters to motors that need them.
-                    if let Ok(mut motors_to_set_sdo) = motors_to_set_sdo.lock() {
-                        if !motors_to_set_sdo.is_empty() {
-                            for (motor_id, params) in motors_to_set_sdo.iter_mut() {
-                                if let Some(torque_limit) = params.torque_limit {
-                                    if let Err(e) = motors.set_torque_limit(*motor_id, torque_limit) {
-                                        error!("Failed to set torque limit for motor {}: {}", motor_id, e);
-                                    }
-                                }
-                                if let Some(speed_limit) = params.speed_limit {
-                                    if let Err(e) = motors.set_speed_limit(*motor_id, speed_limit) {
-                                        error!("Failed to set speed limit for motor {}: {}", motor_id, e);
-                                    }
-                                }
-                                if let Some(current_limit) = params.current_limit {
-                                    if let Err(e) = motors.set_current_limit(*motor_id, current_limit) {
-                                        error!("Failed to set current limit for motor {}: {}", motor_id, e);
-                                    }
+                    // Handle outgoing messages
+                    Some(cmd) = rx.recv() => {
+                        trace!("Processing outgoing command: {:?}", cmd);
+                        match cmd {
+                            TxCommand::Send { id, data } => {
+                                if let Err(e) = protocol_clone.send(id, &data).await {
+                                    error!("Transport sender error: {}", e);
                                 }
                             }
-                            motors_to_set_sdo.clear();
                         }
-                    } else {
-                        error!("Failed to acquire lock on motors_to_set_sdo");
                     }
                 }
+            }
+        });
 
-                {
-                    let params_copy = {
-                        if let Ok(target_params) = target_params.read() {
-                            target_params.clone()
-                        } else {
-                            error!("Failed to acquire read lock on target_params");
-                            HashMap::new()
-                        }
-                    };
+        let mut transports = self.transports.write().await;
+        transports.insert(
+            name,
+            TransportHandler {
+                protocol,
+                tx: tx.clone(),
+                rx: mpsc::channel(32).1,
+            },
+        );
+        info!("Transport {} added successfully", name_for_log);
 
-                    if !params_copy.is_empty() {
-                        let serial_value = serial.read().map_or_else(
-                            |e| {
-                                error!("Failed to acquire read lock on serial: {}", e);
-                                true  // Default to true if we can't read the lock
+        Ok(())
+    }
+
+    pub async fn get_transport_tx(&self, transport_name: &str) -> Result<mpsc::Sender<TxCommand>> {
+        let transports = self.transports.read().await;
+        let transport = transports
+            .get(transport_name)
+            .ok_or_else(|| eyre::eyre!("Transport not found: {}", transport_name))?;
+        Ok(transport.tx.clone())
+    }
+
+    pub async fn add_actuator(
+        &self,
+        actuator: Box<dyn Actuator>,
+        configuration: ActuatorConfiguration,
+    ) {
+        let actuator_id = actuator.id();
+        let actuator_type = actuator.actuator_type();
+
+        let record = ActuatorRecord {
+            actuator,
+            state: ActuatorState {
+                feedback: None,
+                last_feedback: SystemTime::now(),
+                ready: false,
+                enabled: false,
+                control_config: ControlConfig {
+                    kp: 0.0,
+                    kd: 0.0,
+                    max_torque: None,
+                    max_velocity: None,
+                    max_current: None,
+                },
+                control_command: ControlCommand {
+                    target_angle: 0.0,
+                    target_velocity: 0.0,
+                    kp: 0.0,
+                    kd: 0.0,
+                    torque: 0.0,
+                },
+                configuration,
+                messages_received: 0,
+                half_revolutions: 0,
+                actuator_type,
+            },
+        };
+
+        let mut actuators = self.actuators.write().await;
+        actuators.insert(actuator_id, record);
+
+        debug!(
+            "Added actuator with ID: {} (type: {:?})",
+            actuator_id, actuator_type
+        );
+    }
+
+    pub async fn scan_bus(
+        &mut self,
+        host_id: u8,
+        transport_name: &str,
+        actuator_configs: &[(u8, ActuatorConfiguration)],
+    ) -> Result<Vec<u8>> {
+        let transport_tx = self.get_transport_tx(transport_name).await?;
+
+        {
+            let mut discovered = self.discovered_ids.write().await;
+            discovered.clear();
+        }
+
+        // Send get_uuid to all possible IDs
+        for id in 0..=0xFF {
+            // Use desired type if specified, otherwise default to RobStride04
+            let actuator: Box<dyn Actuator> = match actuator_configs
+                .iter()
+                .find(|(desired_id, _)| *desired_id == id)
+            {
+                Some((_, config)) => match config.actuator_type {
+                    ActuatorType::RobStride00 => {
+                        Box::new(RobStride00::new(id, host_id, transport_tx.clone()))
+                    }
+                    ActuatorType::RobStride01 => {
+                        Box::new(RobStride01::new(id, host_id, transport_tx.clone()))
+                    }
+                    ActuatorType::RobStride02 => {
+                        Box::new(RobStride02::new(id, host_id, transport_tx.clone()))
+                    }
+                    ActuatorType::RobStride03 => {
+                        Box::new(RobStride03::new(id, host_id, transport_tx.clone()))
+                    }
+                    ActuatorType::RobStride04 => {
+                        Box::new(RobStride04::new(id, host_id, transport_tx.clone()))
+                    }
+                },
+                None => Box::new(RobStride04::new(id, host_id, transport_tx.clone())),
+            };
+            let _ = actuator.get_uuid().await;
+            time::sleep(Duration::from_millis(1)).await;
+        }
+
+        let timeout = Duration::from_millis(100);
+        let scan_end = SystemTime::now() + timeout;
+
+        while SystemTime::now() < scan_end {
+            // Get a snapshot of discovered IDs
+            let discovered_ids = {
+                let discovered = self.discovered_ids.read().await;
+                discovered.clone()
+            };
+
+            // Process any new IDs
+            for id in discovered_ids {
+                let mut actuators = self.actuators.write().await;
+                if !actuators.contains_key(&id) {
+                    let (actuator, configuration): (Box<dyn Actuator>, ActuatorConfiguration) =
+                        match actuator_configs
+                            .iter()
+                            .find(|(desired_id, _)| *desired_id == id)
+                        {
+                            Some((_, config)) => match config.actuator_type {
+                                ActuatorType::RobStride00 => (
+                                    Box::new(RobStride00::new(id, host_id, transport_tx.clone())),
+                                    config.clone(),
+                                ),
+                                ActuatorType::RobStride01 => (
+                                    Box::new(RobStride01::new(id, host_id, transport_tx.clone())),
+                                    config.clone(),
+                                ),
+                                ActuatorType::RobStride02 => (
+                                    Box::new(RobStride02::new(id, host_id, transport_tx.clone())),
+                                    config.clone(),
+                                ),
+                                ActuatorType::RobStride03 => (
+                                    Box::new(RobStride03::new(id, host_id, transport_tx.clone())),
+                                    config.clone(),
+                                ),
+                                ActuatorType::RobStride04 => (
+                                    Box::new(RobStride04::new(id, host_id, transport_tx.clone())),
+                                    config.clone(),
+                                ),
                             },
-                            |val| *val
-                        );
+                            None => (
+                                Box::new(RobStride04::new(id, host_id, transport_tx.clone())),
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride04,
+                                    max_angle_change: Some(1.0),
+                                    max_velocity: None,
+                                },
+                            ),
+                        };
 
-                        match motors.send_motor_controls(&params_copy, serial_value) {
-                            Ok(feedbacks) => {
-                                let mut latest_feedback = match latest_feedback.write() {
-                                    Ok(guard) => guard,
-                                    Err(e) => {
-                                        error!("Failed to acquire write lock on latest_feedback: {}", e);
-                                        continue;
-                                    }
-                                };
-                                let mut failed_commands = match failed_commands.write() {
-                                    Ok(guard) => guard,
-                                    Err(e) => {
-                                        error!("Failed to acquire write lock on failed_commands: {}", e);
-                                        continue;
-                                    }
-                                };
-                                for &motor_id in params_copy.keys() {
-                                    if let Some(feedback) = feedbacks.get(&motor_id) {
-                                        latest_feedback.insert(motor_id, feedback.clone());
-                                    } else {
-                                        failed_commands.entry(motor_id).and_modify(|e| *e += 1);
-                                    }
+                    let actuator_type = actuator.actuator_type();
+                    actuators.insert(
+                        id,
+                        ActuatorRecord {
+                            actuator,
+                            state: ActuatorState {
+                                feedback: None,
+                                last_feedback: SystemTime::now(),
+                                ready: false,
+                                enabled: false,
+                                control_config: ControlConfig {
+                                    kp: 0.0,
+                                    kd: 0.0,
+                                    max_torque: None,
+                                    max_velocity: None,
+                                    max_current: None,
+                                },
+                                control_command: ControlCommand {
+                                    target_angle: 0.0,
+                                    target_velocity: 0.0,
+                                    kp: 0.0,
+                                    kd: 0.0,
+                                    torque: 0.0,
+                                },
+                                configuration,
+                                messages_received: 0,
+                                half_revolutions: 0,
+                                actuator_type,
+                            },
+                        },
+                    );
+                    debug!(
+                        "Added actuator with ID: {} (type: {:?}) on {}",
+                        id, actuator_type, transport_name
+                    );
+                }
+            }
+
+            time::sleep(Duration::from_millis(1)).await;
+        }
+
+        let discovered_ids = self.discovered_ids.read().await;
+        Ok(discovered_ids.clone())
+    }
+
+    pub async fn run(&mut self, interval: Duration) -> Result<()> {
+        info!("Starting supervisor");
+        let mut interval = time::interval(interval);
+
+        loop {
+            interval.tick().await;
+
+            {
+                let actuators_snapshot = self.actuators.read().await;
+                let num_actuators = actuators_snapshot.len();
+
+                // Process actuators
+                for (&id, record) in actuators_snapshot.iter() {
+                    if record.state.enabled {
+                        if record.state.ready {
+                            let feedback = match record.state.feedback.as_ref() {
+                                Some(f) => f,
+                                None => {
+                                    warn!("No feedback available for actuator {}, skipping control {:?}", id, record.state.control_command);
+                                    continue;
                                 }
-                                if let Ok(mut total) = total_commands.write() {
-                                    *total += 1;
-                                } else {
-                                    error!("Failed to acquire write lock on total_commands");
+                            };
+                            let mut command_valid = true;
+
+                            // Check angle change limit if configured
+                            if let Some(max_angle_change) =
+                                record.state.configuration.max_angle_change
+                            {
+                                let max_angle_change_percent = normalize_value(
+                                    max_angle_change,
+                                    -4.0 * std::f32::consts::PI,
+                                    4.0 * std::f32::consts::PI,
+                                    -100.0,
+                                    100.0,
+                                );
+
+                                let angle_diff = (record.state.control_command.target_angle
+                                    - feedback.angle)
+                                    .abs();
+                                if angle_diff > max_angle_change_percent {
+                                    error!(
+                                        "Actuator {} angle change too large: {:.3}% > {:.3}%, target={:.3}%, feedback={:.3}%",
+                                        id, angle_diff, max_angle_change_percent, record.state.control_command.target_angle, feedback.angle
+                                    );
+                                    command_valid = false;
                                 }
                             }
-                            Err(_) => {}
+
+                            // Check velocity limit if configured
+                            if let Some(max_velocity) = record.state.configuration.max_velocity {
+                                if record.state.control_command.target_velocity.abs() > max_velocity
+                                {
+                                    error!(
+                                        "Actuator {} velocity too large: {:.3} > {:.3}, target={:.3}, feedback={:.3}",
+                                        id,
+                                        record.state.control_command.target_velocity.abs(),
+                                        max_velocity,
+                                        record.state.control_command.target_velocity,
+                                        feedback.velocity
+                                    );
+                                    command_valid = false;
+                                }
+                            }
+
+                            if command_valid {
+                                if let Err(e) = record
+                                    .actuator
+                                    .control(record.state.control_command.clone())
+                                    .await
+                                {
+                                    error!("Failed to control actuator {}: {}", id, e);
+                                }
+                            } else {
+                                if let Err(e) = record.actuator.get_feedback().await {
+                                    error!("Failed to get feedback from actuator {}: {}", id, e);
+                                }
+                            }
+                        } else {
+                            warn!(
+                                "Actuator {} is not ready, {:?}",
+                                id, record.state.control_command
+                            );
+                        }
+                    } else {
+                        if let Err(e) = record.actuator.get_feedback().await {
+                            error!("Failed to get feedback from actuator {}: {}", id, e);
                         }
                     }
                 }
 
-                {
-                    // Calculate actual update rate, as an exponentially weighted moving average.
-                    let elapsed = loop_start_time.duration_since(last_update_time);
-                    last_update_time = loop_start_time;
-                    let current_rate = 1.0 / elapsed.as_secs_f64();
+                // Check timeouts and print stats with write lock
+                drop(actuators_snapshot); // Drop read lock before taking write lock
+                let mut actuators = self.actuators.write().await;
 
-                    let prev_actual_update_rate = actual_update_rate.read().map_or_else(
-                        |e| {
-                            error!("Failed to acquire read lock on actual_update_rate: {}", e);
-                            0.0
-                        },
-                        |rate| *rate
+                for (&id, record) in actuators.iter_mut() {
+                    if record.state.last_feedback.elapsed()? > self.feedback_timeout {
+                        error!("Feedback timeout for actuator {}", id);
+                        record.state.enabled = false;
+
+                        if let Err(e) = record.actuator.disable(false).await {
+                            error!("Failed to disable actuator {} after timeout: {}", id, e);
+                        }
+                    }
+                }
+
+                if self.last_stats_time.elapsed()? > Duration::from_secs(5) {
+                    let total_messages: u64 = actuators
+                        .values()
+                        .map(|record| record.state.messages_received)
+                        .sum();
+                    info!(
+                        "Messages received: {} (avg {:.1} Hz), len={}",
+                        total_messages,
+                        total_messages as f32 / (5.0 * num_actuators as f32),
+                        num_actuators
                     );
 
-                    if let Ok(mut actual) = actual_update_rate.write() {
-                        *actual = prev_actual_update_rate * 0.9 + current_rate * 0.1;
-                    } else {
-                        error!("Failed to acquire write lock on actual_update_rate");
+                    for record in actuators.values_mut() {
+                        record.state.messages_received = 0;
                     }
-                }
-
-                {
-                    // Sleep to maintain maximum update rate.
-                    let target_duration =
-                        Duration::from_secs_f64(1.0 / max_update_rate.read().map_or_else(
-                            |e| {
-                                error!("Failed to acquire read lock on max_update_rate: {}", e);
-                                0.0
-                            },
-                            |rate| *rate
-                        ));
-                    let elapsed = loop_start_time.elapsed();
-                    let min_sleep_duration = Duration::from_micros(1);
-                    if target_duration > elapsed + min_sleep_duration {
-                        thread::sleep(target_duration - elapsed);
-                    } else {
-                        thread::sleep(min_sleep_duration);
-                    }
+                    self.last_stats_time = SystemTime::now();
                 }
             }
-
-            let motor_ids: Vec<u8> = motors.motor_configs.keys().cloned().collect::<Vec<u8>>();
-            let zero_torque_sets: HashMap<u8, MotorControlParams> = HashMap::from_iter(
-                motor_ids
-                    .iter()
-                    .map(|id| (*id, MotorControlParams::default())),
-            );
-            let _ = motors.send_motor_controls(&zero_torque_sets, true);
-            let _ = motors.send_resets();
-        });
+        }
     }
 
-    // Updated methods to access the command counters
-    pub fn get_total_commands(&self) -> Result<u64, eyre::Error> {
-        Ok(*self.total_commands.read().map_err(|e| eyre!(
-            "Failed to acquire read lock on total_commands: {}", e
-        ))?)
-    }
-    pub fn get_failed_commands(&self, motor_id: u8) -> Result<u64, eyre::Error> {
-        self.failed_commands
-            .read()
-            .map_err(|e| eyre!(
-                "Failed to acquire read lock: {}", e
-            ))?
-            .get(&motor_id)
-            .copied()
-            .ok_or_else(|| {
-                eyre!(
-                    "Motor ID {} not found", motor_id
-                )
-            })
+    pub async fn enable(&mut self, id: u8) -> Result<()> {
+        let mut actuators = self.actuators.write().await;
+        let record = actuators
+            .get_mut(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+        record.actuator.enable().await?;
+        record.state.enabled = true;
+        Ok(())
     }
 
-    pub fn reset_command_counters(&self) -> Result<(), eyre::Error> {
-        self.total_commands
-            .write()
-            .map_err(|e| eyre!(
-                "Failed to acquire write lock on total_commands: {}", e
-            ))
-            .map(|mut total| *total = 0)?;
+    pub async fn disable(&mut self, id: u8, clear_fault: bool) -> Result<()> {
+        let mut actuators = self.actuators.write().await;
+        let record = actuators
+            .get_mut(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+        record.actuator.disable(clear_fault).await?;
+        record.state.enabled = false;
+        Ok(())
+    }
 
-        self.failed_commands
-            .write()
-            .map_err(|e| eyre!(
-                "Failed to acquire write lock on failed_commands: {}", e
-            ))
-            .map(|mut failed| *failed = HashMap::new())?;
+    pub async fn configure(&mut self, id: u8, config: ControlConfig) -> Result<()> {
+        let mut actuators = self.actuators.write().await;
+        let record = actuators
+            .get_mut(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+
+        let cmd = match record.state.actuator_type {
+            ActuatorType::RobStride00 => RobStride00Command {
+                kp: config.kp,
+                kd: config.kd,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride01 => RobStride01Command {
+                kp: config.kp,
+                kd: config.kd,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride02 => RobStride02Command {
+                kp: config.kp,
+                kd: config.kd,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride03 => RobStride03Command {
+                kp: config.kp,
+                kd: config.kd,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride04 | _ => RobStride04Command {
+                kp: config.kp,
+                kd: config.kd,
+                ..Default::default()
+            }
+            .to_control_command(),
+        };
+
+        record.state.control_config = config.clone();
+        record.state.control_command.kp = cmd.kp;
+        record.state.control_command.kd = cmd.kd;
+
+        // Set limits if provided
+        if let Some(max_torque) = config.max_torque {
+            record.actuator.set_max_torque(max_torque).await?;
+        }
+        if let Some(max_velocity) = config.max_velocity {
+            record.actuator.set_max_velocity(max_velocity).await?;
+        }
+        if let Some(max_current) = config.max_current {
+            record.actuator.set_max_current(max_current).await?;
+        }
 
         Ok(())
     }
 
-    pub fn set_all_params(&self, params: HashMap<u8, MotorControlParams>) -> Result<(), eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!(
-            format!("Failed to acquire write lock on target_params: {}", e)
-        ))?;
-        *target_params = params;
+    pub async fn command(
+        &mut self,
+        id: u8,
+        position: f32,
+        velocity: f32,
+        torque: f32,
+    ) -> Result<()> {
+        let mut actuators = self.actuators.write().await;
+        let record = actuators
+            .get_mut(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+
+        let position = denormalize_radians(position, record.state.half_revolutions);
+
+        let cmd = match record.state.actuator_type {
+            ActuatorType::RobStride00 => RobStride00Command {
+                target_angle_rad: position,
+                target_velocity_rads: velocity,
+                torque_nm: torque,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride01 => RobStride01Command {
+                target_angle_rad: position,
+                target_velocity_rads: velocity,
+                torque_nm: torque,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride02 => RobStride02Command {
+                target_angle_rad: position,
+                target_velocity_rads: velocity,
+                torque_nm: torque,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride03 => RobStride03Command {
+                target_angle_rad: position,
+                target_velocity_rads: velocity,
+                torque_nm: torque,
+                ..Default::default()
+            }
+            .to_control_command(),
+            ActuatorType::RobStride04 => RobStride04Command {
+                target_angle_rad: position,
+                target_velocity_rads: velocity,
+                torque_nm: torque,
+                ..Default::default()
+            }
+            .to_control_command(),
+        };
+
+        record.state.control_command.target_angle = cmd.target_angle;
+        record.state.control_command.target_velocity = cmd.target_velocity;
+        record.state.control_command.torque = cmd.torque;
+
         Ok(())
     }
 
-    pub fn set_params(
-        &self,
-        motor_id: u8,
-        params: MotorControlParams,
-    ) -> Result<(), eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!(
-            format!("Failed to acquire write lock on target_params: {}", e)
-        ))?;
-        target_params.insert(motor_id, params);
+    pub async fn set_id(&mut self, id: u8, new_id: u8) -> Result<()> {
+        let mut actuators = self.actuators.write().await;
+        let record = actuators
+            .get_mut(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+        record.actuator.set_id(new_id).await?;
+
+        let record = actuators.remove(&id).unwrap();
+        actuators.insert(new_id, record);
         Ok(())
     }
 
-    pub fn set_positions(&self, positions: HashMap<u8, f32>) -> Result<(), eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!(
-            "Failed to acquire write lock on target_params: {}", e
-        ))?;
-        for (motor_id, position) in positions {
-            if let Some(params) = target_params.get_mut(&motor_id) {
-                params.position = position;
-            } else {
-                return Err(eyre!("Motor ID {} not found", motor_id));
+    pub async fn get_uuid(&mut self, id: u8) -> Result<()> {
+        let actuators = self.actuators.read().await;
+        let record = actuators
+            .get(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+        record.actuator.get_uuid().await
+    }
+
+    pub async fn control(&mut self, id: u8, cmd: ControlCommand) -> Result<()> {
+        let actuators = self.actuators.read().await;
+        let record = actuators
+            .get(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+        record.actuator.control(cmd).await
+    }
+
+    pub async fn get_feedback(&self, id: u8) -> Result<Option<(FeedbackFrame, SystemTime)>> {
+        let actuators = self.actuators.read().await;
+        let record = actuators.get(&id);
+        if let Some(record) = record {
+            if let Some(mut feedback) = record.state.feedback.clone() {
+                let typed_feedback: Box<dyn TypedFeedbackData> = match record.state.actuator_type {
+                    ActuatorType::RobStride00 => {
+                        Box::new(RobStride00Feedback::from_feedback_frame(feedback.clone()))
+                    }
+                    ActuatorType::RobStride01 => {
+                        Box::new(RobStride01Feedback::from_feedback_frame(feedback.clone()))
+                    }
+                    ActuatorType::RobStride02 => {
+                        Box::new(RobStride02Feedback::from_feedback_frame(feedback.clone()))
+                    }
+                    ActuatorType::RobStride03 => {
+                        Box::new(RobStride03Feedback::from_feedback_frame(feedback.clone()))
+                    }
+                    ActuatorType::RobStride04 => {
+                        Box::new(RobStride04Feedback::from_feedback_frame(feedback.clone()))
+                    }
+                };
+
+                feedback.angle = typed_feedback.angle_rad();
+                feedback.velocity = typed_feedback.velocity_rads();
+                feedback.torque = typed_feedback.torque_nm();
+
+                feedback.angle = normalize_radians(feedback.angle).0;
+                return Ok(Some((feedback, record.state.last_feedback)));
             }
         }
+        Ok(None)
+    }
+
+    pub async fn zero(&mut self, id: u8) -> Result<()> {
+        let mut actuators = self.actuators.write().await;
+        let record = actuators
+            .get_mut(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+        record.actuator.set_zero().await
+    }
+
+    pub async fn change_id(&mut self, id: u8, new_id: u8) -> Result<()> {
+        let mut actuators = self.actuators.write().await;
+        let mut record = actuators
+            .remove(&id)
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
+        record.actuator.set_id(new_id).await?;
+        actuators.insert(new_id, record);
         Ok(())
-    }
-
-    pub fn set_position(&self, motor_id: u8, position: f32) -> Result<f32, eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!(
-            "Failed to acquire write lock on target_params: {}", e
-        ))?;
-        if let Some(params) = target_params.get_mut(&motor_id) {
-            params.position = position;
-            Ok(params.position)
-        } else {
-            Err(eyre!(
-                "Motor ID {} not found", motor_id
-            ))
-        }
-    }
-
-    pub fn get_position(&self, motor_id: u8) -> Result<f32, eyre::Error> {
-        let target_params = self.target_params.read()
-            .map_err(|e| eyre!("Failed to acquire read lock on target_params: {}", e))?;
-        target_params
-            .get(&motor_id)
-            .map(|params| params.position)
-            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
-    }
-
-    pub fn set_velocities(&self, velocities: HashMap<u8, f32>) -> Result<(), eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
-        for (motor_id, velocity) in velocities {
-            if let Some(params) = target_params.get_mut(&motor_id) {
-                params.velocity = velocity;
-            } else {
-                return Err(eyre!("Motor ID {} not found", motor_id));
-            }
-        }
-        Ok(())
-    }
-
-    pub fn set_velocity(&self, motor_id: u8, velocity: f32) -> Result<f32, eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
-        if let Some(params) = target_params.get_mut(&motor_id) {
-            params.velocity = velocity;
-            Ok(params.velocity)
-        } else {
-            Err(eyre!("Motor ID {} not found", motor_id))
-        }
-    }
-
-    pub fn get_velocity(&self, motor_id: u8) -> Result<f32, eyre::Error> {
-        let target_params = self.target_params.read()
-            .map_err(|e| eyre!("Failed to acquire read lock on target_params: {}", e))?;
-        target_params
-            .get(&motor_id)
-            .map(|params| params.velocity)
-            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
-    }
-
-    pub fn set_kp(&self, motor_id: u8, kp: f32) -> Result<f32, eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
-        if let Some(params) = target_params.get_mut(&motor_id) {
-            params.kp = kp.max(0.0); // Clamp kp to be non-negative.
-            Ok(params.kp)
-        } else {
-            Err(eyre!("Motor ID {} not found", motor_id))
-        }
-    }
-
-    pub fn get_kp(&self, motor_id: u8) -> Result<f32, eyre::Error> {
-        let target_params = self.target_params.read()
-            .map_err(|e| eyre!("Failed to acquire read lock on target_params: {}", e))?;
-        target_params
-            .get(&motor_id)
-            .map(|params| params.kp)
-            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
-    }
-
-    pub fn set_kd(&self, motor_id: u8, kd: f32) -> Result<f32, eyre::Error> {
-        let mut target_params = self.target_params.write().map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
-        if let Some(params) = target_params.get_mut(&motor_id) {
-            params.kd = kd.max(0.0); // Clamp kd to be non-negative.
-            Ok(params.kd)
-        } else {
-            Err(eyre!("Motor ID {} not found", motor_id))
-        }
-    }
-
-    pub fn get_kd(&self, motor_id: u8) -> Result<f32, eyre::Error> {
-        let target_params = self.target_params.read()
-            .map_err(|e| eyre!("Failed to read target params: {}", e))?;
-        
-        target_params
-            .get(&motor_id)
-            .map(|params| params.kd)
-            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
-    }
-
-    pub fn set_torque_limit(&self, motor_id: u8, torque_limit: f32) -> Result<f32, eyre::Error> {
-        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock()
-            .map_err(|e| eyre!("Failed to lock motors_to_set_sdo: {}", e))?;
-        
-        motors_to_set_sdo.insert(
-            motor_id, 
-            MotorSdoParams { 
-                torque_limit: Some(torque_limit), 
-                speed_limit: None, 
-                current_limit: None 
-            }
-        );
-        Ok(torque_limit)
-    }
-
-    pub fn set_speed_limit(&self, motor_id: u8, speed_limit: f32) -> Result<f32, eyre::Error> {
-        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock()
-            .map_err(|e| eyre!("Failed to lock motors_to_set_sdo: {}", e))?;
-        
-        motors_to_set_sdo.insert(
-            motor_id, 
-            MotorSdoParams { 
-                torque_limit: None, 
-                speed_limit: Some(speed_limit), 
-                current_limit: None 
-            }
-        );
-        Ok(speed_limit)
-    }
-
-    pub fn set_current_limit(&self, motor_id: u8, current_limit: f32) -> Result<f32, eyre::Error> {
-        let mut motors_to_set_sdo = self.motors_to_set_sdo.lock()
-            .map_err(|e| eyre!("Failed to lock motors_to_set_sdo: {}", e))?;
-        
-        motors_to_set_sdo.insert(
-            motor_id, 
-            MotorSdoParams { 
-                torque_limit: None, 
-                speed_limit: None, 
-                current_limit: Some(current_limit) 
-            }
-        );
-        Ok(current_limit)
-    }
-
-    pub fn set_torque(&self, motor_id: u8, torque: f32) -> Result<f32, eyre::Error> {
-        let mut target_params = self.target_params.write()
-            .map_err(|e| eyre!("Failed to acquire write lock on target_params: {}", e))?;
-        if let Some(params) = target_params.get_mut(&motor_id) {
-            params.torque = torque;
-            Ok(params.torque)
-        } else {
-            Err(eyre!("Motor ID {} not found", motor_id))
-        }
-    }
-
-    pub fn get_torque(&self, motor_id: u8) -> Result<f32, eyre::Error> {
-        let target_params = self.target_params.read()
-            .map_err(|e| eyre!("Failed to read target params: {}", e))?;
-        target_params
-            .get(&motor_id)
-            .map(|params| params.torque)
-            .ok_or_else(|| eyre!("Motor ID {} not found", motor_id))
-    }
-
-    pub fn add_motor_to_zero(&self, motor_id: u8) -> Result<(), eyre::Error> {
-        // We need to set the motor parameters to zero to avoid the motor
-        // rapidly changing to the new target after it is zeroed.
-        self.set_torque(motor_id, 0.0)?;
-        self.set_position(motor_id, 0.0)?;
-        self.set_velocity(motor_id, 0.0)?;
-        let mut motors_to_zero = self.motors_to_zero.lock()
-            .map_err(|e| eyre!("Failed to lock motors_to_zero: {}", e))?;
-        motors_to_zero.insert(motor_id);
-        Ok(())
-    }
-
-    pub fn get_latest_feedback(&self) -> Result<HashMap<u8, MotorFeedback>, eyre::Error> {
-        let latest_feedback = self.latest_feedback.read()
-            .map_err(|e| eyre!("Failed to read latest_feedback: {}", e))?;
-        Ok(latest_feedback.clone())
-    }
-
-    pub fn toggle_pause(&self) -> Result<(), eyre::Error> {
-        let mut paused = self.paused.write().map_err(|e| eyre!("Failed to acquire write lock on paused: {}", e))?;
-        *paused = !*paused;
-        Ok(())
-    }
-
-    pub fn reset(&self) -> Result<(), eyre::Error> {
-        let mut restart = self.restart.lock().map_err(|e| eyre!("Failed to lock restart: {}", e))?;
-        *restart = true;
-        Ok(())
-    }
-
-    pub fn stop(&self) -> Result<(), eyre::Error> {
-        {
-            let mut running = self.running.write().map_err(|e| eyre!("Failed to acquire write lock on running: {}", e))?;
-            *running = false;
-        }
-        thread::sleep(Duration::from_millis(200));
-        Ok(())
-    }
-
-    pub fn is_running(&self) -> Result<bool, eyre::Error> {
-        Ok(*self.running.read().map_err(|e| eyre!("Failed to read running: {}", e))?)
-    }
-
-    pub fn set_max_update_rate(&self, rate: f64) -> Result<(), eyre::Error> {
-        let mut max_rate = self.max_update_rate.write().map_err(|e| eyre!("Failed to acquire write lock on max_update_rate: {}", e))?;
-        *max_rate = rate;
-        Ok(())
-    }
-
-    pub fn get_actual_update_rate(&self) -> Result<f64, eyre::Error> {
-        Ok(*self.actual_update_rate.read().map_err(|e| eyre!("Failed to read actual_update_rate: {}", e))?)
-    }
-
-    pub fn get_serial(&self) -> Result<bool, eyre::Error> {
-        Ok(*self.serial.read().map_err(|e| eyre!("Failed to read serial: {}", e))?)
-    }
-
-    pub fn toggle_serial(&self) -> Result<bool, eyre::Error> {
-        let mut serial = self.serial.write().map_err(|e| eyre!("Failed to acquire write lock on serial: {}", e))?;
-        *serial = !*serial;
-        Ok(*serial)
-    }
-}
-
-impl Drop for MotorsSupervisor {
-    fn drop(&mut self) {
-        let _ = self.stop();
     }
 }

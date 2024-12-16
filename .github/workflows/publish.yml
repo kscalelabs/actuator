@@ -17,9 +17,9 @@ jobs:
   build-wheels:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
     name: Build and publish Python package (${{ matrix.os }})
-    timeout-minutes: 30
+    timeout-minutes: 180
     runs-on: ${{ matrix.os }}
 
     steps:
