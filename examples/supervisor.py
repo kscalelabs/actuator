@@ -4,7 +4,7 @@ import argparse
 import math
 import time
 
-from actuator import RobstrideMotorsSupervisor
+from actuator import RobstrideActuator, RobstrideActuatorConfig
 
 
 def main() -> None:
@@ -18,33 +18,16 @@ def main() -> None:
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    amplitude = args.amplitude
-    period = args.period
+    _amplitude = args.amplitude
+    _period = args.period
 
-    supervisor = RobstrideMotorsSupervisor(args.port_name, {args.motor_id: args.motor_type})
+    supervisor = RobstrideActuator(
+        ports=[args.port_name],
+        py_actuators_config=[(args.motor_id, RobstrideActuatorConfig(args.motor_type))],
+        polling_interval=args.sleep,
+    )
 
-    supervisor.set_kp(args.motor_id, 10.0)
-    supervisor.set_kd(args.motor_id, 1.0)
-
-    start_time = time.time()
-
-    try:
-        while True:
-            elapsed_time = time.time() - start_time
-            target_position = amplitude * math.sin(elapsed_time * 2 * math.pi / period)
-            target_velocity = amplitude * 2 * math.pi / period * math.cos(elapsed_time * 2 * math.pi / period)
-            supervisor.set_position(args.motor_id, target_position)
-            supervisor.set_velocity(args.motor_id, target_velocity)
-            time.sleep(args.sleep)
-            if args.verbose:
-                feedback = supervisor.get_latest_feedback()
-                print(feedback)
-
-    except KeyboardInterrupt:
-        supervisor.stop()
-        time.sleep(0.1)
-        raise
-
+    supervisor.start()
 
 if __name__ == "__main__":
     # python -m examples.supervisor

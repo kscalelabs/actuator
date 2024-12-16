@@ -2,10 +2,9 @@
 
 from .bindings import (
     PyRobstrideActuator as RobstrideActuator,
-    PyRobstrideActuatorCommand as RobstrideActuatorCommand,
-    PyRobstrideActuatorState as RobstrideActuatorState,
-    PyRobstrideConfigureRequest as RobstrideConfigureRequest,
+    PyRobstrideActuatorConfig as RobstrideActuatorConfig,
     get_version,
 )
 
 __version__ = get_version()
+ 
