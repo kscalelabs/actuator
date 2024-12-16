@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
-use robstride::{CH341Transport, ControlConfig, SocketCanTransport, Supervisor, TransportType};
+use pyo3_stub_gen::define_stub_info_gatherer;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};use robstride::{CH341Transport, ControlConfig, SocketCanTransport, Supervisor, TransportType};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::Duration;
