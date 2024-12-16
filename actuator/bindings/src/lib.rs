@@ -1,10 +1,22 @@
 use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};use robstride::{CH341Transport, ControlConfig, SocketCanTransport, Supervisor, TransportType};
+use robstride::{
+    ActuatorType, CH341Transport, ControlConfig, SocketCanTransport, 
+    Supervisor, TransportType, ActuatorConfiguration
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::Duration;
 use tokio::runtime::Runtime;
+
+struct ErrReportWrapper(eyre::Report);
+
+impl From<ErrReportWrapper> for PyErr {
+    fn from(err: ErrReportWrapper) -> PyErr {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.0.to_string())
+    }
+}
 
 #[pyfunction]
 #[gen_stub_pyfunction]
@@ -287,12 +299,14 @@ impl From<eyre::Report> for PyErr {
 }
 
 #[pymodule]
-fn robstride_bindings(py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(get_version, m)?)?;
-    m.add("PyRobstrideActuator", py.get_type::<PyRobstrideActuator>())?;
-    m.add("PyRobstrideActuatorCommand", py.get_type::<PyRobstrideActuatorCommand>())?;
-    m.add("PyRobstrideConfigureRequest", py.get_type::<PyRobstrideConfigureRequest>())?;
-    m.add("PyRobstrideActuatorState", py.get_type::<PyRobstrideActuatorState>())?;
-    m.add("PyRobstrideActuatorConfig", py.get_type::<PyRobstrideActuatorConfig>())?;
+fn robstride_bindings(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_wrapped(wrap_pyfunction!(get_version))?;
+    m.add_class::<PyRobstrideActuator>()?;
+    m.add_class::<PyRobstrideActuatorCommand>()?;
+    m.add_class::<PyRobstrideConfigureRequest>()?;
+    m.add_class::<PyRobstrideActuatorState>()?;
+    m.add_class::<PyRobstrideActuatorConfig>()?;
     Ok(())
 }
+
+define_stub_info_gatherer!(robstride_bindings);
