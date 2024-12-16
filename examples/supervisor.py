@@ -1,7 +1,6 @@
 """Example of moving a motor using the supervisor."""
 
 import argparse
-import math
 import time
 
 from actuator import RobstrideActuator, RobstrideActuatorConfig
@@ -27,7 +26,10 @@ def main() -> None:
         polling_interval=args.sleep,
     )
 
-    supervisor.start()
+    while True:
+        print(supervisor.get_actuators_state([args.motor_id]))
+        time.sleep(1)
+
 
 if __name__ == "__main__":
     # python -m examples.supervisor
