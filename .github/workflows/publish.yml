@@ -51,7 +51,7 @@ jobs:
         env:
           CIBW_SKIP: "pp* *-musllinux*"  # Skip PyPy and musllinux builds
           CIBW_BEFORE_ALL_LINUX: |
-            yum install -y libudev-devel pkgconfig
+            yum install -y libudev-devel pkgconfig python3-devel
           CIBW_BEFORE_ALL_MACOS: |
             brew install openssl pkg-config
           CIBW_ARCHS_LINUX: auto aarch64 ppc64le s390x
