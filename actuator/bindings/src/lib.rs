@@ -13,6 +13,7 @@ fn get_version() -> String {
 }
 
 #[pyclass]
+#[derive(Clone)]
 struct PyRobstrideActuatorCommand {
     #[pyo3(get, set)]
     actuator_id: u32,
@@ -38,6 +39,7 @@ impl PyRobstrideActuatorCommand {
 }
 
 #[pyclass]
+#[derive(Clone)]
 struct PyRobstrideConfigureRequest {
     #[pyo3(get, set)]
     actuator_id: u32,
@@ -72,6 +74,7 @@ impl PyRobstrideConfigureRequest {
 }
 
 #[pyclass]
+#[derive(Clone)]
 struct PyRobstrideActuatorState {
     #[pyo3(get)]
     actuator_id: u32,
@@ -85,6 +88,29 @@ struct PyRobstrideActuatorState {
     torque: Option<f64>,
     #[pyo3(get)]
     temperature: Option<f64>,
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct PyRobstrideActuatorConfig {
+    #[pyo3(get, set)]
+    actuator_type: u8,
+    #[pyo3(get, set)]
+    max_angle_change: Option<f64>,
+    #[pyo3(get, set)]
+    max_velocity: Option<f64>,
+}
+
+#[pymethods]
+impl PyRobstrideActuatorConfig {
+    #[new]
+    fn new(actuator_type: u8) -> Self {
+        Self {
+            actuator_type,
+            max_angle_change: None,
+            max_velocity: None,
+        }
+    }
 }
 
 #[pyclass]
@@ -237,11 +263,36 @@ impl PyRobstrideActuator {
     }
 }
 
+impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
+    fn from(config: PyRobstrideActuatorConfig) -> Self {
+        Self {
+            actuator_type: match config.actuator_type {
+                0 => ActuatorType::RobStride00,
+                1 => ActuatorType::RobStride01,
+                2 => ActuatorType::RobStride02,
+                3 => ActuatorType::RobStride03,
+                4 => ActuatorType::RobStride04,
+                _ => ActuatorType::RobStride00,
+            },
+            max_angle_change: config.max_angle_change.map(|v| v as f32),
+            max_velocity: config.max_velocity.map(|v| v as f32),
+        }
+    }
+}
+
+impl From<eyre::Report> for PyErr {
+    fn from(err: eyre::Report) -> PyErr {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.to_string())
+    }
+}
+
 #[pymodule]
-fn robstride_bindings(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyRobstrideActuator>()?;
-    m.add_class::<PyRobstrideActuatorCommand>()?;
-    m.add_class::<PyRobstrideConfigureRequest>()?;
-    m.add_class::<PyRobstrideActuatorState>()?;
+fn robstride_bindings(py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(get_version, m)?)?;
+    m.add("PyRobstrideActuator", py.get_type::<PyRobstrideActuator>())?;
+    m.add("PyRobstrideActuatorCommand", py.get_type::<PyRobstrideActuatorCommand>())?;
+    m.add("PyRobstrideConfigureRequest", py.get_type::<PyRobstrideConfigureRequest>())?;
+    m.add("PyRobstrideActuatorState", py.get_type::<PyRobstrideActuatorState>())?;
+    m.add("PyRobstrideActuatorConfig", py.get_type::<PyRobstrideActuatorConfig>())?;
     Ok(())
 }
