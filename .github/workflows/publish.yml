@@ -19,7 +19,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     name: Build and publish Python package (${{ matrix.os }})
-    timeout-minutes: 60
+    timeout-minutes: 180
     runs-on: ${{ matrix.os }}
 
     steps:
