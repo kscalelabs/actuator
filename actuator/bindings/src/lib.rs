@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::prelude::PyErr;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 use robstride::{
@@ -11,6 +12,12 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 
 struct ErrReportWrapper(eyre::Report);
+
+impl From<eyre::Report> for ErrReportWrapper {
+    fn from(err: eyre::Report) -> Self {
+        ErrReportWrapper(err)
+    }
+}
 
 impl From<ErrReportWrapper> for PyErr {
     fn from(err: ErrReportWrapper) -> PyErr {
@@ -156,7 +163,7 @@ impl PyRobstrideActuator {
         let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
         
         let supervisor = rt.block_on(async {
-            let mut supervisor = Supervisor::new()
+            let mut supervisor = Supervisor::new(Duration::from_secs(1))
                 .map_err(|e| ErrReportWrapper(e))?;
 
             for port in &ports {
@@ -205,7 +212,7 @@ impl PyRobstrideActuator {
             let mut supervisor = self.supervisor.lock().await;
             
             for cmd in commands {
-                let result = supervisor
+                match supervisor
                     .command(
                         cmd.actuator_id as u8,
                         cmd.position.map(|p| p.to_radians() as f32).unwrap_or(0.0),
@@ -213,8 +220,10 @@ impl PyRobstrideActuator {
                         cmd.torque.map(|t| t as f32).unwrap_or(0.0),
                     )
                     .await
-                    .map_err(|e| ErrReportWrapper(e))?;
-                results.push(result.is_ok());
+                {
+                    Ok(_) => results.push(true),
+                    Err(_) => results.push(false),
+                }
             }
             Ok(results)
         })
@@ -232,7 +241,7 @@ impl PyRobstrideActuator {
                 max_current: Some(10.0),
             };
 
-            let result = supervisor.configure(config.actuator_id as u8, control_config).await
+            let _result = supervisor.configure(config.actuator_id as u8, control_config).await
                 .map_err(|e| ErrReportWrapper(e))?;
 
             if let Some(torque_enabled) = config.torque_enabled {
@@ -297,12 +306,6 @@ impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
             max_angle_change: config.max_angle_change.map(|v| v as f32),
             max_velocity: config.max_velocity.map(|v| v as f32),
         }
-    }
-}
-
-impl From<eyre::Report> for PyErr {
-    fn from(err: eyre::Report) -> PyErr {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.to_string())
     }
 }
 
