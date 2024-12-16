@@ -1,15 +1,15 @@
-use pyo3::prelude::*;
 use pyo3::prelude::PyErr;
+use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 use robstride::{
-    ActuatorType, ActuatorConfiguration, Supervisor, TransportType,
-    CH341Transport, ControlConfig, SocketCanTransport,
+    ActuatorConfiguration, ActuatorType, CH341Transport, ControlConfig, SocketCanTransport,
+    Supervisor, TransportType,
 };
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::time::Duration;
 use tokio::runtime::Runtime;
+use tokio::sync::Mutex;
 
 struct ErrReportWrapper(eyre::Report);
 
@@ -161,21 +161,23 @@ impl PyRobstrideActuator {
             .collect();
 
         let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
-        
+
         let supervisor = rt.block_on(async {
-            let mut supervisor = Supervisor::new(Duration::from_secs(1))
-                .map_err(|e| ErrReportWrapper(e))?;
+            let mut supervisor =
+                Supervisor::new(Duration::from_secs(1)).map_err(|e| ErrReportWrapper(e))?;
 
             for port in &ports {
                 if port.starts_with("/dev/tty") {
-                    let serial = CH341Transport::new(port.clone()).await
+                    let serial = CH341Transport::new(port.clone())
+                        .await
                         .map_err(|e| ErrReportWrapper(e))?;
                     supervisor
                         .add_transport(port.clone(), TransportType::CH341(serial))
                         .await
                         .map_err(|e| ErrReportWrapper(e))?;
                 } else if port.starts_with("can") {
-                    let can = SocketCanTransport::new(port.clone()).await
+                    let can = SocketCanTransport::new(port.clone())
+                        .await
                         .map_err(|e| ErrReportWrapper(e))?;
                     supervisor
                         .add_transport(port.clone(), TransportType::SocketCAN(can))
@@ -188,7 +190,9 @@ impl PyRobstrideActuator {
 
             // Scan for motors
             for port in &ports {
-                let discovered_ids = supervisor.scan_bus(0xFD, port, &actuators_config).await
+                let discovered_ids = supervisor
+                    .scan_bus(0xFD, port, &actuators_config)
+                    .await
                     .map_err(|e| ErrReportWrapper(e))?;
                 for (motor_id, _) in &actuators_config {
                     if !discovered_ids.contains(motor_id) {
@@ -210,7 +214,7 @@ impl PyRobstrideActuator {
         self.rt.block_on(async {
             let mut results = vec![];
             let mut supervisor = self.supervisor.lock().await;
-            
+
             for cmd in commands {
                 match supervisor
                     .command(
@@ -232,7 +236,7 @@ impl PyRobstrideActuator {
     fn configure_actuator(&self, config: PyRobstrideConfigureRequest) -> PyResult<bool> {
         self.rt.block_on(async {
             let mut supervisor = self.supervisor.lock().await;
-            
+
             let control_config = ControlConfig {
                 kp: config.kp.unwrap_or(0.0) as f32,
                 kd: config.kd.unwrap_or(0.0) as f32,
@@ -241,21 +245,29 @@ impl PyRobstrideActuator {
                 max_current: Some(10.0),
             };
 
-            let _result = supervisor.configure(config.actuator_id as u8, control_config).await
+            let _result = supervisor
+                .configure(config.actuator_id as u8, control_config)
+                .await
                 .map_err(|e| ErrReportWrapper(e))?;
 
             if let Some(torque_enabled) = config.torque_enabled {
                 if torque_enabled {
-                    supervisor.enable(config.actuator_id as u8).await
+                    supervisor
+                        .enable(config.actuator_id as u8)
+                        .await
                         .map_err(|e| ErrReportWrapper(e))?;
                 } else {
-                    supervisor.disable(config.actuator_id as u8, true).await
+                    supervisor
+                        .disable(config.actuator_id as u8, true)
+                        .await
                         .map_err(|e| ErrReportWrapper(e))?;
                 }
             }
 
             if let Some(true) = config.zero_position {
-                supervisor.zero(config.actuator_id as u8).await
+                supervisor
+                    .zero(config.actuator_id as u8)
+                    .await
                     .map_err(|e| ErrReportWrapper(e))?;
             }
 
@@ -270,16 +282,20 @@ impl PyRobstrideActuator {
         })
     }
 
-    fn get_actuators_state(&self, actuator_ids: Vec<u32>) -> PyResult<Vec<PyRobstrideActuatorState>> {
+    fn get_actuators_state(
+        &self,
+        actuator_ids: Vec<u32>,
+    ) -> PyResult<Vec<PyRobstrideActuatorState>> {
         self.rt.block_on(async {
             let mut responses = vec![];
             let supervisor = self.supervisor.lock().await;
-            
+
             for id in actuator_ids {
                 if let Ok(Some((feedback, ts))) = supervisor.get_feedback(id as u8).await {
                     responses.push(PyRobstrideActuatorState {
                         actuator_id: id,
-                        online: ts.elapsed().unwrap_or(Duration::from_secs(1)) < Duration::from_secs(1),
+                        online: ts.elapsed().unwrap_or(Duration::from_secs(1))
+                            < Duration::from_secs(1),
                         position: Some(feedback.angle.to_degrees() as f64),
                         velocity: Some(feedback.velocity.to_degrees() as f64),
                         torque: Some(feedback.torque as f64),
