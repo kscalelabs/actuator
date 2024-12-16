@@ -55,10 +55,10 @@ jobs:
           CIBW_ARCHS_LINUX: auto aarch64 s390x
           CIBW_BEFORE_BUILD: |
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            source $HOME/.cargo/env
+            export PATH="$HOME/.cargo/bin:$PATH"
             pip install setuptools-rust
           CIBW_ENVIRONMENT: |
-            PATH="/usr/local/bin:$HOME/.cargo/env:$PATH"
+            PATH="/usr/local/bin:$HOME/.cargo/bin:$PATH"
             CARGO_NET_GIT_FETCH_WITH_CLI=true
         run: |
           cibuildwheel --output-dir dist
