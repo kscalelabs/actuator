@@ -141,14 +141,14 @@ impl PyRobstrideActuatorConfig {
 
 #[gen_stub_pyclass]
 #[pyclass]
-struct PyRobstrideActuator {
+struct PyRobstrideSupervisor {
     supervisor: Arc<Mutex<Supervisor>>,
     rt: Runtime,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideActuator {
+impl PyRobstrideSupervisor {
     #[new]
     fn new(
         ports: Vec<String>,
@@ -204,7 +204,7 @@ impl PyRobstrideActuator {
             Ok(supervisor)
         })?;
 
-        Ok(PyRobstrideActuator {
+        Ok(PyRobstrideSupervisor {
             supervisor: Arc::new(Mutex::new(supervisor)),
             rt,
         })
@@ -328,7 +328,7 @@ impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
 #[pymodule]
 fn robstride_bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
-    m.add_class::<PyRobstrideActuator>()?;
+    m.add_class::<PyRobstrideSupervisor>()?;
     m.add_class::<PyRobstrideActuatorCommand>()?;
     m.add_class::<PyRobstrideConfigureRequest>()?;
     m.add_class::<PyRobstrideActuatorState>()?;

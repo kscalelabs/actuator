@@ -3,7 +3,7 @@
 import argparse
 import time
 
-from actuator import RobstrideActuator, RobstrideActuatorConfig
+from actuator import RobstrideActuatorConfig, RobstrideSupervisor
 
 
 def main() -> None:
@@ -20,7 +20,7 @@ def main() -> None:
     _amplitude = args.amplitude
     _period = args.period
 
-    supervisor = RobstrideActuator(
+    supervisor = RobstrideSupervisor(
         ports=[args.port_name],
         py_actuators_config=[(args.motor_id, RobstrideActuatorConfig(args.motor_type))],
         polling_interval=args.sleep,
