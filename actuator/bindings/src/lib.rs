@@ -55,12 +55,12 @@ struct PyRobstrideActuatorCommand {
 #[pymethods]
 impl PyRobstrideActuatorCommand {
     #[new]
-    fn new(actuator_id: u32) -> Self {
+    fn new(actuator_id: u32, position: Option<f64>, velocity: Option<f64>, torque: Option<f64>) -> Self {
         Self {
             actuator_id,
-            position: None,
-            velocity: None,
-            torque: None,
+            position,
+            velocity,
+            torque,
         }
     }
 }
@@ -89,15 +89,15 @@ struct PyRobstrideConfigureRequest {
 #[pymethods]
 impl PyRobstrideConfigureRequest {
     #[new]
-    fn new(actuator_id: u32) -> Self {
+    fn new(actuator_id: u32, kp: Option<f64>, kd: Option<f64>, max_torque: Option<f64>, torque_enabled: Option<bool>, zero_position: Option<bool>, new_actuator_id: Option<u32>) -> Self {
         Self {
             actuator_id,
-            kp: None,
-            kd: None,
-            max_torque: None,
-            torque_enabled: None,
-            zero_position: None,
-            new_actuator_id: None,
+            kp,
+            kd,
+            max_torque,
+            torque_enabled,
+            zero_position,
+            new_actuator_id,
         }
     }
 }
