@@ -56,7 +56,7 @@ async fn main() -> eyre::Result<()> {
     supervisor
         .add_actuator(
             Box::new(RobStride02::new(
-                1,
+                14,
                 0xFE,
                 supervisor.get_transport_tx("stub").await?,
             )),
