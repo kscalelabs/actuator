@@ -227,6 +227,7 @@ pub struct ActuatorConfiguration {
     pub actuator_type: ActuatorType,
     pub max_angle_change: Option<f32>,
     pub max_velocity: Option<f32>,
+    pub command_rate_hz: Option<f32>,
 }
 
 impl Default for ActuatorConfiguration {
@@ -235,6 +236,7 @@ impl Default for ActuatorConfiguration {
             actuator_type: ActuatorType::RobStride04,
             max_angle_change: None,
             max_velocity: None,
+            command_rate_hz: None,
         }
     }
 }

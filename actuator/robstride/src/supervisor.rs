@@ -32,6 +32,7 @@ enum StateUpdate {
 pub struct ActuatorState {
     pub feedback: Option<FeedbackFrame>,
     pub last_feedback: SystemTime,
+    pub last_command: SystemTime,
     pub ready: bool,
     pub enabled: bool,
     pub control_config: ControlConfig,
@@ -285,6 +286,7 @@ impl Supervisor {
             state: ActuatorState {
                 feedback: None,
                 last_feedback: SystemTime::now(),
+                last_command: SystemTime::now(),
                 ready: false,
                 enabled: false,
                 control_config: ControlConfig {
@@ -407,6 +409,7 @@ impl Supervisor {
                                     actuator_type: ActuatorType::RobStride04,
                                     max_angle_change: Some(1.0),
                                     max_velocity: None,
+                                    command_rate_hz: Some(100.0),
                                 },
                             ),
                         };
@@ -419,6 +422,7 @@ impl Supervisor {
                             state: ActuatorState {
                                 feedback: None,
                                 last_feedback: SystemTime::now(),
+                                last_command: SystemTime::now(),
                                 ready: false,
                                 enabled: false,
                                 control_config: ControlConfig {
@@ -478,7 +482,25 @@ impl Supervisor {
                                     continue;
                                 }
                             };
+                            let now = SystemTime::now();
                             let mut command_valid = true;
+
+                            // Check command rate limit if configured
+                            if let Some(rate_hz) = record.state.configuration.command_rate_hz {
+                                let min_interval = Duration::from_secs_f32(1.0 / rate_hz);
+                                if let Ok(elapsed) = record.state.last_command.elapsed() {
+                                    if elapsed < min_interval {
+                                        trace!(
+                                            "Skipping command for actuator {} due to rate limit ({:.1} Hz): {:.1}ms < {:.1}ms",
+                                            id,
+                                            rate_hz,
+                                            elapsed.as_secs_f32() * 1000.0,
+                                            min_interval.as_secs_f32() * 1000.0
+                                        );
+                                        command_valid = false;
+                                    }
+                                }
+                            }
 
                             // Check angle change limit if configured
                             if let Some(max_angle_change) =
@@ -527,6 +549,8 @@ impl Supervisor {
                                     .await
                                 {
                                     error!("Failed to control actuator {}: {}", id, e);
+                                } else {
+                                    record.state.last_command = now;
                                 }
                             } else {
                                 if let Err(e) = record.actuator.get_feedback().await {
