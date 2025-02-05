@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
-
+use tokio::time;
 struct ErrReportWrapper(eyre::Report);
 
 impl From<eyre::Report> for ErrReportWrapper {
@@ -49,12 +49,17 @@ struct PyRobstrideActuatorCommand {
 #[pymethods]
 impl PyRobstrideActuatorCommand {
     #[new]
-    fn new(actuator_id: u32) -> Self {
+    fn new(
+        actuator_id: u32,
+        position: Option<f64>,
+        velocity: Option<f64>,
+        torque: Option<f64>,
+    ) -> Self {
         Self {
             actuator_id,
-            position: None,
-            velocity: None,
-            torque: None,
+            position: position,
+            velocity: velocity,
+            torque: torque,
         }
     }
 }
@@ -83,15 +88,23 @@ struct PyRobstrideConfigureRequest {
 #[pymethods]
 impl PyRobstrideConfigureRequest {
     #[new]
-    fn new(actuator_id: u32) -> Self {
+    fn new(
+        actuator_id: u32,
+        kp: Option<f64>,
+        kd: Option<f64>,
+        max_torque: Option<f64>,
+        torque_enabled: Option<bool>,
+        zero_position: Option<bool>,
+        new_actuator_id: Option<u32>,
+    ) -> Self {
         Self {
             actuator_id,
-            kp: None,
-            kd: None,
-            max_torque: None,
-            torque_enabled: None,
-            zero_position: None,
-            new_actuator_id: None,
+            kp: kp,
+            kd: kd,
+            max_torque: max_torque,
+            torque_enabled: torque_enabled,
+            zero_position: zero_position,
+            new_actuator_id: new_actuator_id,
         }
     }
 }
@@ -153,17 +166,16 @@ impl PyRobstrideActuator {
     fn new(
         ports: Vec<String>,
         py_actuators_config: Vec<(u8, PyRobstrideActuatorConfig)>,
-        polling_interval: f64,
     ) -> PyResult<Self> {
         let actuators_config: Vec<(u8, ActuatorConfiguration)> = py_actuators_config
             .into_iter()
             .map(|(id, config)| (id, config.into()))
             .collect();
 
-        let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
+        let rt: Runtime = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
 
         let supervisor = rt.block_on(async {
-            let mut supervisor =
+            let mut supervisor: Supervisor =
                 Supervisor::new(Duration::from_secs(1)).map_err(|e| ErrReportWrapper(e))?;
 
             for port in &ports {
@@ -194,19 +206,50 @@ impl PyRobstrideActuator {
                     .scan_bus(0xFD, port, &actuators_config)
                     .await
                     .map_err(|e| ErrReportWrapper(e))?;
+
                 for (motor_id, _) in &actuators_config {
                     if !discovered_ids.contains(motor_id) {
                         tracing::warn!("Configured motor not found - ID: {}", motor_id);
                     }
                 }
             }
-
             Ok(supervisor)
         })?;
 
         Ok(PyRobstrideActuator {
             supervisor: Arc::new(Mutex::new(supervisor)),
             rt,
+        })
+    }
+
+    fn run_main_loop(&self, interval_ms: u64) -> PyResult<bool> {
+        self.rt.block_on(async {
+            let mut interval = time::interval(Duration::from_millis(interval_ms));
+            let supervisor_clone = self.supervisor.clone();
+            self.rt.spawn(async move {
+                loop {
+                    interval.tick().await;
+                    let mut clone: tokio::sync::MutexGuard<'_, Supervisor> =
+                        supervisor_clone.lock().await;
+                    if let Err(e) = clone.run_update_and_control().await {
+                        tracing::error!("Error in run_update_and_control: {:?}", e);
+                    }
+                    drop(clone);
+                }
+            });
+            return Ok(true);
+        })
+    }
+    fn disable(&self, id: u8) -> PyResult<bool> {
+        self.rt.block_on(async {
+            let mut supervisor = self.supervisor.lock().await;
+            Ok(supervisor.disable(id, true).await.is_ok())
+        })
+    }
+    fn enable(&self, id: u8) -> PyResult<bool> {
+        self.rt.block_on(async {
+            let mut supervisor = self.supervisor.lock().await;
+            Ok(supervisor.enable(id).await.is_ok())
         })
     }
 
@@ -289,7 +332,6 @@ impl PyRobstrideActuator {
         self.rt.block_on(async {
             let mut responses = vec![];
             let supervisor = self.supervisor.lock().await;
-
             for id in actuator_ids {
                 if let Ok(Some((feedback, ts))) = supervisor.get_feedback(id as u8).await {
                     responses.push(PyRobstrideActuatorState {
@@ -326,7 +368,7 @@ impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
 }
 
 #[pymodule]
-fn robstride_bindings(m: &Bound<PyModule>) -> PyResult<()> {
+fn bindings(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_class::<PyRobstrideActuator>()?;
     m.add_class::<PyRobstrideActuatorCommand>()?;
