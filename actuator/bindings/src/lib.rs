@@ -240,12 +240,14 @@ impl PyRobstrideActuator {
             return Ok(true);
         })
     }
+
     fn disable(&self, id: u8) -> PyResult<bool> {
         self.rt.block_on(async {
             let mut supervisor = self.supervisor.lock().await;
             Ok(supervisor.disable(id, true).await.is_ok())
         })
     }
+
     fn enable(&self, id: u8) -> PyResult<bool> {
         self.rt.block_on(async {
             let mut supervisor = self.supervisor.lock().await;

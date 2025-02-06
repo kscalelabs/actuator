@@ -461,7 +461,6 @@ impl Supervisor {
     }
     pub async fn run_update_and_control(&self) -> Result<()> {
         let actuators_snapshot = self.actuators.read().await;
-        //let num_actuators = actuators_snapshot.len();
 
         // Process actuators
         for (&id, record) in actuators_snapshot.iter() {
