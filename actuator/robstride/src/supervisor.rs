@@ -17,7 +17,7 @@ use crate::{
     transport::TransportType,
     Actuator, Command, ControlCommand, FeedbackFrame, Frame, Protocol, TxCommand,
 };
-use crate::{ActuatorType, FaultFeedback, ObtainIDCommand};
+use crate::{ActuatorType, FaultFeedback};
 
 // Add the StateUpdate enum at the top of the file
 #[derive(Debug)]
@@ -468,11 +468,11 @@ impl Supervisor {
             interval.tick().await;
 
             {
-                let actuators_snapshot = self.actuators.read().await;
+                let mut actuators_snapshot = self.actuators.write().await;
                 let num_actuators = actuators_snapshot.len();
 
                 // Process actuators
-                for (&id, record) in actuators_snapshot.iter() {
+                for (&id, record) in actuators_snapshot.iter_mut() {
                     if record.state.enabled {
                         if record.state.ready {
                             let feedback = match record.state.feedback.as_ref() {
@@ -637,32 +637,27 @@ impl Supervisor {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
             ActuatorType::RobStride01 => RobStride01Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
             ActuatorType::RobStride02 => RobStride02Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
             ActuatorType::RobStride03 => RobStride03Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
-            ActuatorType::RobStride04 | _ => RobStride04Command {
+            }.to_control_command(),
+            ActuatorType::RobStride04 => RobStride04Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
         };
 
         record.state.control_config = config.clone();
@@ -796,6 +791,20 @@ impl Supervisor {
                 feedback.angle = typed_feedback.angle_rad();
                 feedback.velocity = typed_feedback.velocity_rads();
                 feedback.torque = typed_feedback.torque_nm();
+
+                // Log feedback information
+                debug!("Motor {} feedback:", id);
+                debug!("  Angle: {:?}", feedback.angle);
+                debug!("  Velocity: {:?}", feedback.velocity);
+                debug!("  Torque: {:?}", feedback.torque);
+                debug!("  Temperature: {:?}", feedback.temperature);
+                debug!("  Faults:");
+                debug!("    Uncalibrated: {:?}", feedback.fault_uncalibrated);
+                debug!("    Hall encoding: {:?}", feedback.fault_hall_encoding);
+                debug!("    Magnetic encoding: {:?}", feedback.fault_magnetic_encoding);
+                debug!("    Over temperature: {:?}", feedback.fault_over_temperature);
+                debug!("    Overcurrent: {:?}", feedback.fault_overcurrent);
+                debug!("    Undervoltage: {:?}", feedback.fault_undervoltage);
 
                 feedback.angle = normalize_radians(feedback.angle).0;
                 return Ok(Some((feedback, record.state.last_feedback)));
