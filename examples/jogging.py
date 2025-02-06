@@ -2,13 +2,8 @@
 
 import argparse
 import time
-import os
-import sys
-
-sys.path.append(os.path.join("actuator"))
-from actuator import RobstrideActuator, RobstrideActuatorConfig, RobstrideActuatorCommand, RobstrideConfigureRequest
+from actuator import RobstrideActuator, RobstrideActuatorConfig, RobstrideActuatorCommand
 from dataclasses import dataclass
-import typing
 import threading
 import logging
 

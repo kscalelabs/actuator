@@ -2,13 +2,9 @@
 
 import argparse
 import time
-import os
-import sys
 
-sys.path.append(os.path.join("actuator"))
-from actuator import RobstrideActuator, RobstrideActuatorConfig, RobstrideActuatorCommand, RobstrideConfigureRequest
+from actuator import RobstrideActuator, RobstrideActuatorConfig
 from dataclasses import dataclass
-import typing
 import threading
 import logging
 
@@ -50,7 +46,7 @@ def main() -> None:
     supervisor.run_main_loop(interval_ms=args.update_loop_interval_ms)
 
     def monitor_thread():
-        nonlocal start_time, current_state
+        nonlocal start_time
         while True:
             loop_start = time.time()
 

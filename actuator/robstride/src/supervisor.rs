@@ -552,27 +552,7 @@ impl Supervisor {
                     error!("Failed to disable actuator {} after timeout: {}", id, e);
                 }
             }
-        }
-
-        /*
-        Don't worry about last stats time...
-        if self.last_stats_time.elapsed()? > Duration::from_secs(5) {
-            let total_messages: u64 = actuators
-                .values()
-                .map(|record| record.state.messages_received)
-                .sum();
-            info!(
-                "Messages received: {} (avg {:.1} Hz), len={}",
-                total_messages,
-                total_messages as f32 / (5.0 * num_actuators as f32),
-                num_actuators
-            );
-
-            for record in actuators.values_mut() {
-                record.state.messages_received = 0;
-            }
-            self.last_stats_time = SystemTime::now();
-        }*/
+        }        
         return Result::Ok(());
     }
     pub async fn run(&self, interval: Duration) -> Result<()> {
@@ -675,10 +655,7 @@ impl Supervisor {
         let mut actuators = self.actuators.write().await;
         let record = actuators
             .get_mut(&id)
-            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;
-        println!("velo {}", velocity);
-        println!("torque {}", torque);
-        println!("pos {}", position);
+            .ok_or_else(|| eyre::eyre!("Actuator not found"))?;        
         let position = denormalize_radians(position, record.state.half_revolutions);
 
         let cmd = match record.state.actuator_type {
