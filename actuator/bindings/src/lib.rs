@@ -321,6 +321,7 @@ impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
             },
             max_angle_change: config.max_angle_change.map(|v| v as f32),
             max_velocity: config.max_velocity.map(|v| v as f32),
+            command_rate_hz: Some(100.0f32),
         }
     }
 }

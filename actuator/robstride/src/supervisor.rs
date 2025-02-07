@@ -17,7 +17,7 @@ use crate::{
     transport::TransportType,
     Actuator, Command, ControlCommand, FeedbackFrame, Frame, Protocol, TxCommand,
 };
-use crate::{ActuatorType, FaultFeedback, ObtainIDCommand};
+use crate::{ActuatorType, FaultFeedback};
 
 // Add the StateUpdate enum at the top of the file
 #[derive(Debug)]
@@ -32,6 +32,7 @@ enum StateUpdate {
 pub struct ActuatorState {
     pub feedback: Option<FeedbackFrame>,
     pub last_feedback: SystemTime,
+    pub last_command: SystemTime,
     pub ready: bool,
     pub enabled: bool,
     pub control_config: ControlConfig,
@@ -285,6 +286,7 @@ impl Supervisor {
             state: ActuatorState {
                 feedback: None,
                 last_feedback: SystemTime::now(),
+                last_command: SystemTime::now(),
                 ready: false,
                 enabled: false,
                 control_config: ControlConfig {
@@ -407,6 +409,7 @@ impl Supervisor {
                                     actuator_type: ActuatorType::RobStride04,
                                     max_angle_change: Some(1.0),
                                     max_velocity: None,
+                                    command_rate_hz: Some(100.0),
                                 },
                             ),
                         };
@@ -419,6 +422,7 @@ impl Supervisor {
                             state: ActuatorState {
                                 feedback: None,
                                 last_feedback: SystemTime::now(),
+                                last_command: SystemTime::now(),
                                 ready: false,
                                 enabled: false,
                                 control_config: ControlConfig {
@@ -464,11 +468,11 @@ impl Supervisor {
             interval.tick().await;
 
             {
-                let actuators_snapshot = self.actuators.read().await;
+                let mut actuators_snapshot = self.actuators.write().await;
                 let num_actuators = actuators_snapshot.len();
 
                 // Process actuators
-                for (&id, record) in actuators_snapshot.iter() {
+                for (&id, record) in actuators_snapshot.iter_mut() {
                     if record.state.enabled {
                         if record.state.ready {
                             let feedback = match record.state.feedback.as_ref() {
@@ -478,7 +482,25 @@ impl Supervisor {
                                     continue;
                                 }
                             };
+                            let now = SystemTime::now();
                             let mut command_valid = true;
+
+                            // Check command rate limit if configured
+                            if let Some(rate_hz) = record.state.configuration.command_rate_hz {
+                                let min_interval = Duration::from_secs_f32(1.0 / rate_hz);
+                                if let Ok(elapsed) = record.state.last_command.elapsed() {
+                                    if elapsed < min_interval {
+                                        trace!(
+                                            "Skipping command for actuator {} due to rate limit ({:.1} Hz): {:.1}ms < {:.1}ms",
+                                            id,
+                                            rate_hz,
+                                            elapsed.as_secs_f32() * 1000.0,
+                                            min_interval.as_secs_f32() * 1000.0
+                                        );
+                                        command_valid = false;
+                                    }
+                                }
+                            }
 
                             // Check angle change limit if configured
                             if let Some(max_angle_change) =
@@ -527,6 +549,8 @@ impl Supervisor {
                                     .await
                                 {
                                     error!("Failed to control actuator {}: {}", id, e);
+                                } else {
+                                    record.state.last_command = now;
                                 }
                             } else {
                                 if let Err(e) = record.actuator.get_feedback().await {
@@ -613,32 +637,27 @@ impl Supervisor {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
             ActuatorType::RobStride01 => RobStride01Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
             ActuatorType::RobStride02 => RobStride02Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
             ActuatorType::RobStride03 => RobStride03Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
-            ActuatorType::RobStride04 | _ => RobStride04Command {
+            }.to_control_command(),
+            ActuatorType::RobStride04 => RobStride04Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }
-            .to_control_command(),
+            }.to_control_command(),
         };
 
         record.state.control_config = config.clone();
@@ -772,6 +791,20 @@ impl Supervisor {
                 feedback.angle = typed_feedback.angle_rad();
                 feedback.velocity = typed_feedback.velocity_rads();
                 feedback.torque = typed_feedback.torque_nm();
+
+                // Log feedback information
+                debug!("Motor {} feedback:", id);
+                debug!("  Angle: {:?}", feedback.angle);
+                debug!("  Velocity: {:?}", feedback.velocity);
+                debug!("  Torque: {:?}", feedback.torque);
+                debug!("  Temperature: {:?}", feedback.temperature);
+                debug!("  Faults:");
+                debug!("    Uncalibrated: {:?}", feedback.fault_uncalibrated);
+                debug!("    Hall encoding: {:?}", feedback.fault_hall_encoding);
+                debug!("    Magnetic encoding: {:?}", feedback.fault_magnetic_encoding);
+                debug!("    Over temperature: {:?}", feedback.fault_over_temperature);
+                debug!("    Overcurrent: {:?}", feedback.fault_overcurrent);
+                debug!("    Undervoltage: {:?}", feedback.fault_undervoltage);
 
                 feedback.angle = normalize_radians(feedback.angle).0;
                 return Ok(Some((feedback, record.state.last_feedback)));
