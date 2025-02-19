@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use std::sync::Arc;
 use tracing::{info, error, trace};
-use robstride::{TxCommand, Protocol, ControlCommand, Actuator, Transport};
+use robstride::{TxCommand, Protocol, ControlCommand, Actuator, Transport, TypedCommandData};
 use tracing_subscriber::{fmt, EnvFilter};
 
 #[tokio::main]
@@ -59,14 +59,14 @@ async fn main() -> Result<()> {
     // Create a position command (1 radian)
     let target_position = 0.0;
     println!("Moving to position: {} radians", target_position);
-    
-    let command = ControlCommand {
-        target_angle: target_position,
-        target_velocity: 0.0,
-        kp: 50.0,  // Position gain
+
+    let command = RobStride03Command {
+        target_angle_rad: target_position,
+        target_velocity_rads: 0.0,
+        kp: 25.0,  // Position gain
         kd: 5.0,   // Velocity gain
-        torque: 0.0,
-    };
+        torque_nm: 0.0,
+    }.to_control_command();
     
     // Send the command
     motor.control(command).await?;
