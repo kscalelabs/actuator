@@ -542,8 +542,9 @@ impl Supervisor {
                                 }
                             }
 
-                            #[cfg(feature = "instant_command")]
-                            command_valid = false;
+                            if cfg!(feature = "instant_command") {
+                                command_valid = false;
+                            }
 
                             if command_valid {
                                 if let Err(e) = record
@@ -742,11 +743,12 @@ impl Supervisor {
         record.state.control_command.target_velocity = cmd.target_velocity;
         record.state.control_command.torque = cmd.torque;
 
-        #[cfg(feature = "instant_command")]
-        record
-            .actuator
-            .control(record.state.control_command.clone())
-            .await?;
+        if cfg!(feature = "instant_command") {
+            record
+                .actuator
+                .control(record.state.control_command.clone())
+                .await?;
+        }
 
         Ok(())
     }
