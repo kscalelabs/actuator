@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -37,7 +37,7 @@ jobs:
 
       - name: Restore cache
         id: restore-cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: |
             ${{ env.pythonLocation }}
@@ -61,7 +61,7 @@ jobs:
           make test
 
       - name: Save cache
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v4
         if: github.ref == 'refs/heads/master'
         with:
           path: |
