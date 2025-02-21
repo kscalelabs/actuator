@@ -15,6 +15,10 @@ license.workspace = true
 name = "robstride"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+instant_command = []
+
 [dependencies]
 
 async-trait = "0.1"

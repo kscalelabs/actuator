@@ -542,6 +542,10 @@ impl Supervisor {
                                 }
                             }
 
+                            if cfg!(feature = "instant_command") {
+                                command_valid = false;
+                            }
+
                             if command_valid {
                                 if let Err(e) = record
                                     .actuator
@@ -637,27 +641,32 @@ impl Supervisor {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }.to_control_command(),
+            }
+            .to_control_command(),
             ActuatorType::RobStride01 => RobStride01Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }.to_control_command(),
+            }
+            .to_control_command(),
             ActuatorType::RobStride02 => RobStride02Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }.to_control_command(),
+            }
+            .to_control_command(),
             ActuatorType::RobStride03 => RobStride03Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }.to_control_command(),
+            }
+            .to_control_command(),
             ActuatorType::RobStride04 => RobStride04Command {
                 kp: config.kp,
                 kd: config.kd,
                 ..Default::default()
-            }.to_control_command(),
+            }
+            .to_control_command(),
         };
 
         record.state.control_config = config.clone();
@@ -734,6 +743,13 @@ impl Supervisor {
         record.state.control_command.target_velocity = cmd.target_velocity;
         record.state.control_command.torque = cmd.torque;
 
+        if cfg!(feature = "instant_command") {
+            record
+                .actuator
+                .control(record.state.control_command.clone())
+                .await?;
+        }
+
         Ok(())
     }
 
@@ -801,8 +817,14 @@ impl Supervisor {
                 debug!("  Faults:");
                 debug!("    Uncalibrated: {:?}", feedback.fault_uncalibrated);
                 debug!("    Hall encoding: {:?}", feedback.fault_hall_encoding);
-                debug!("    Magnetic encoding: {:?}", feedback.fault_magnetic_encoding);
-                debug!("    Over temperature: {:?}", feedback.fault_over_temperature);
+                debug!(
+                    "    Magnetic encoding: {:?}",
+                    feedback.fault_magnetic_encoding
+                );
+                debug!(
+                    "    Over temperature: {:?}",
+                    feedback.fault_over_temperature
+                );
                 debug!("    Overcurrent: {:?}", feedback.fault_overcurrent);
                 debug!("    Undervoltage: {:?}", feedback.fault_undervoltage);
 

@@ -10,4 +10,4 @@ pub use actuator_types::*;
 pub use actuators::*;
 pub use protocol::Protocol;
 pub use supervisor::*;
-pub use transport::{CH341Transport, SocketCanTransport, StubTransport, TransportType, Transport};
+pub use transport::{CH341Transport, SocketCanTransport, StubTransport, Transport, TransportType};
