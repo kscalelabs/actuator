@@ -542,6 +542,8 @@ impl Supervisor {
                                 }
                             }
 
+                            command_valid = false;
+
                             if command_valid {
                                 if let Err(e) = record
                                     .actuator
@@ -733,6 +735,8 @@ impl Supervisor {
         record.state.control_command.target_angle = cmd.target_angle;
         record.state.control_command.target_velocity = cmd.target_velocity;
         record.state.control_command.torque = cmd.torque;
+
+        record.actuator.control(cmd).await?;
 
         Ok(())
     }
