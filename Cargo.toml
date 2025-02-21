@@ -8,8 +8,8 @@ resolver = "2"
 
 [workspace.package]
 
-version = "0.3.3"
-authors = ["Wesley Maa <wesley@kscale.dev>", "Pawel Budzianowski <pawel@kscale.dev>", "Benjamin Bolte <ben@kscale.dev>"]
+version = "0.3.4"
+authors = ["Denys Bezmenov <denys@kscale.dev>", "Wesley Maa <wesley@kscale.dev>", "Pawel Budzianowski <pawel@kscale.dev>", "Benjamin Bolte <ben@kscale.dev>"]
 edition = "2021"
 description = "Actuator package"
 license = "MIT"

@@ -134,7 +134,7 @@ impl Command {
                 // Parse fault data from the command
                 let fault_values = u32::from_le_bytes(self.data[0..4].try_into().unwrap());
                 let warning_values = u32::from_le_bytes(self.data[4..8].try_into().unwrap());
-                
+
                 let fault_feedback = FaultFeedback {
                     phase_a_overcurrent: (fault_values & (1 << 13)) != 0,
                     overload_fault: (fault_values & (1 << 14)) != 0,
@@ -147,7 +147,7 @@ impl Command {
                     motor_over_temp_fault: (fault_values & 1) != 0,
                     motor_over_temp_warning: (warning_values & 1) != 0,
                 };
-                
+
                 Ok(Frame::Fault(fault_feedback))
             }
             _ => Err("Invalid communication type".to_string()),
@@ -536,16 +536,36 @@ impl CommandData for FaultFeedback {
         let mut fault_values: u32 = 0;
         let mut warning_values: u32 = 0;
 
-        if self.phase_a_overcurrent { fault_values |= 1 << 13; }
-        if self.overload_fault { fault_values |= 1 << 14; }
-        if self.encoder_not_calibrated { fault_values |= 1 << 7; }
-        if self.phase_c_overcurrent { fault_values |= 1 << 12; }
-        if self.phase_b_overcurrent { fault_values |= 1 << 11; }
-        if self.overvoltage_fault { fault_values |= 1 << 3; }
-        if self.undervoltage_fault { fault_values |= 1 << 2; }
-        if self.driver_chip_failure { fault_values |= 1 << 1; }
-        if self.motor_over_temp_fault { fault_values |= 1; }
-        if self.motor_over_temp_warning { warning_values |= 1; }
+        if self.phase_a_overcurrent {
+            fault_values |= 1 << 13;
+        }
+        if self.overload_fault {
+            fault_values |= 1 << 14;
+        }
+        if self.encoder_not_calibrated {
+            fault_values |= 1 << 7;
+        }
+        if self.phase_c_overcurrent {
+            fault_values |= 1 << 12;
+        }
+        if self.phase_b_overcurrent {
+            fault_values |= 1 << 11;
+        }
+        if self.overvoltage_fault {
+            fault_values |= 1 << 3;
+        }
+        if self.undervoltage_fault {
+            fault_values |= 1 << 2;
+        }
+        if self.driver_chip_failure {
+            fault_values |= 1 << 1;
+        }
+        if self.motor_over_temp_fault {
+            fault_values |= 1;
+        }
+        if self.motor_over_temp_warning {
+            warning_values |= 1;
+        }
 
         let mut data = [0u8; 8];
         data[0..4].copy_from_slice(&fault_values.to_le_bytes());
