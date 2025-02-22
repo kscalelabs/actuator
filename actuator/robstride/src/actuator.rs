@@ -124,12 +124,12 @@ impl Command {
                 Ok(Frame::Feedback(FeedbackFrame::from_command(self.clone())))
             }
             CommunicationType::Read => Ok(Frame::Read(ReadCommand::from_command(self.clone()))),
-            // CommunicationType::Stop => Ok(Frame::Feedback(
-            //     FeedbackFrame::from_command(self.clone()),
-            // )),
-            // CommunicationType::Enable => Ok(Frame::Feedback(
-            //     FeedbackFrame::from_command(self.clone()),
-            // )),
+            CommunicationType::Stop => Ok(Frame::Feedback(
+                FeedbackFrame::from_command(self.clone()),
+            )),
+            CommunicationType::Enable => Ok(Frame::Feedback(
+                FeedbackFrame::from_command(self.clone()),
+            )),
             CommunicationType::Fault => {
                 // Parse fault data from the command
                 let fault_values = u32::from_le_bytes(self.data[0..4].try_into().unwrap());
