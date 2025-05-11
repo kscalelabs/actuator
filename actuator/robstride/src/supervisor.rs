@@ -687,6 +687,19 @@ impl Supervisor {
         Ok(())
     }
 
+    pub async fn request_feedback(&self, id: u8) -> Result<()> {
+        let actuators = self.actuators.read().await;
+        let record = actuators.get(&id);
+        if let Some(record) = record {
+            if let Err(e) = record.actuator.get_feedback().await {
+                error!("Failed to request feedback from actuator {}: {}", id, e);
+            }
+        } else {
+            error!("Actuator {} not found", id);
+        }
+        Ok(())
+    }
+
     pub async fn command(
         &mut self,
         id: u8,
