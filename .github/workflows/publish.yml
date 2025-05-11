@@ -252,7 +252,7 @@ jobs:
           sudo apt-get install -y libudev-dev pkg-config
 
       - name: Cache Cargo registry
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry
@@ -260,7 +260,7 @@ jobs:
             ${{ runner.os }}-cargo-registry
 
       - name: Cache Cargo index
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-index
