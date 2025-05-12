@@ -698,6 +698,7 @@ impl Supervisor {
             if let Err(e) = record.actuator.get_feedback().await {
                 error!("Failed to request feedback from actuator {}: {}", id, e);
             }
+            trace!(event = "FeedbackRequested", motor_id = id, "Supervisor requested feedback from actuator");
         } else {
             error!("Actuator {} not found", id);
         }
@@ -759,7 +760,7 @@ impl Supervisor {
         record.state.control_command.target_angle = cmd.target_angle;
         record.state.control_command.target_velocity = cmd.target_velocity;
         record.state.control_command.torque = cmd.torque;
-
+        trace!(event = "MITCommandSent", motor_id = id, cmd = ?cmd, "Supervisor sending command to actuator");
         if cfg!(feature = "instant_command") {
             record
                 .actuator
