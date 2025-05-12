@@ -134,6 +134,7 @@ impl Supervisor {
                             if let Some(record) = actuators_guard.get_mut(&feedback.motor_id) {
                                 record.state.feedback = Some(feedback.clone());
                                 record.state.last_feedback = SystemTime::now();
+                                trace!(event = "FeedbackProcessed", motor_id = feedback.motor_id, feedback_details = ?feedback, "Actuator state updated with feedback");
                                 record.state.messages_received += 1;
                                 if record.state.messages_received >= 5 {
                                     // robstride lol
@@ -189,8 +190,8 @@ impl Supervisor {
         let name_for_log = name_clone.clone();
 
         // Create callback for frame processing
-        let frame_callback: Arc<dyn Fn(u32, Vec<u8>) + Send + Sync + 'static> =
-            Arc::new(move |id: u32, data: Vec<u8>| {
+        let frame_callback: Arc<dyn Fn(u32, Vec<u8>) + Send + Sync + 'static> = Arc::new(
+            move |id: u32, data: Vec<u8>| {
                 let cmd = Command::from_can_packet(id, data.clone());
                 trace!(
                     "Transport callback received: id={:x}, data={:02x?}, cmd={:?}",
@@ -202,6 +203,7 @@ impl Supervisor {
                 if let Ok(cmd_frame) = cmd.to_frame() {
                     match cmd_frame {
                         Frame::Feedback(feedback) => {
+                            trace!(event = "FeedbackParsed", raw_can_id = id, motor_id = feedback.motor_id, feedback_details = ?feedback, "Supervisor parsed FeedbackFrame");
                             let _ = state_update_tx.try_send(StateUpdate::Feedback(feedback));
                         }
                         Frame::ObtainID(oid) => {
@@ -215,7 +217,8 @@ impl Supervisor {
                 } else {
                     warn!("Failed to parse frame from command: {:?}", cmd);
                 }
-            });
+            },
+        );
 
         let protocol = Protocol::new(transport.clone(), frame_callback);
         debug!("Created protocol for transport: {}", name);
@@ -241,6 +244,7 @@ impl Supervisor {
                         trace!("Processing outgoing command: {:?}", cmd);
                         match cmd {
                             TxCommand::Send { id, data } => {
+                                trace!(event = "CommandSentToTransport", can_id = id, data_len = data.len(), data_bytes = ?data, "Supervisor dispatching command to transport");
                                 if let Err(e) = protocol_clone.send(id, &data).await {
                                     error!("Transport sender error: {}", e);
                                 }
