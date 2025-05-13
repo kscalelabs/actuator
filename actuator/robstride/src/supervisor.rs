@@ -688,6 +688,9 @@ impl Supervisor {
     }
 
     pub async fn request_feedback(&self, id: u8) -> Result<()> {
+
+        // get current time
+        let now = SystemTime::now();
         let actuators = self.actuators.read().await;
         let record = actuators.get(&id);
         if let Some(record) = record {
@@ -696,6 +699,14 @@ impl Supervisor {
             }
         } else {
             error!("Actuator {} not found", id);
+        }
+
+        let elapsed = now.elapsed()?;
+        if elapsed.as_millis() > 1000 {
+            warn!(
+                "Feedback request took too long: {} ns",
+                elapsed.as_millis()
+            );
         }
         Ok(())
     }
