@@ -203,7 +203,7 @@ impl Supervisor {
                 if let Ok(cmd_frame) = cmd.to_frame() {
                     match cmd_frame {
                         Frame::Feedback(feedback) => {
-                            trace!(event = "FeedbackParsed", raw_can_id = id, motor_id = feedback.motor_id, feedback_details = ?feedback, "Supervisor parsed FeedbackFrame");
+                            debug!(event = "FeedbackParsed", raw_can_id = id, motor_id = feedback.motor_id, feedback_details = ?feedback, "Supervisor parsed FeedbackFrame");
                             let _ = state_update_tx.try_send(StateUpdate::Feedback(feedback));
                         }
                         Frame::ObtainID(oid) => {
@@ -698,7 +698,7 @@ impl Supervisor {
             if let Err(e) = record.actuator.get_feedback().await {
                 error!("Failed to request feedback from actuator {}: {}", id, e);
             }
-            trace!(event = "FeedbackRequested", motor_id = id, "Supervisor requested feedback from actuator");
+            debug!(event = "FeedbackRequested", motor_id = id, "Supervisor requested feedback from actuator");
         } else {
             error!("Actuator {} not found", id);
         }
@@ -760,7 +760,7 @@ impl Supervisor {
         record.state.control_command.target_angle = cmd.target_angle;
         record.state.control_command.target_velocity = cmd.target_velocity;
         record.state.control_command.torque = cmd.torque;
-        trace!(event = "MITCommandSent", motor_id = id, cmd = ?cmd, "Supervisor sending command to actuator");
+        debug!(event = "MITCommandSent", motor_id = id, cmd = ?cmd, "Supervisor sending command to actuator");
         if cfg!(feature = "instant_command") {
             record
                 .actuator
