@@ -134,7 +134,7 @@ impl Supervisor {
                             if let Some(record) = actuators_guard.get_mut(&feedback.motor_id) {
                                 record.state.feedback = Some(feedback.clone());
                                 record.state.last_feedback = SystemTime::now();
-                                trace!(event = "FeedbackProcessed", motor_id = feedback.motor_id, feedback_details = ?feedback, "Actuator state updated with feedback");
+                                debug!(event = "FeedbackProcessed", motor_id = feedback.motor_id, feedback_details = ?feedback, "Actuator state updated with feedback");
                                 record.state.messages_received += 1;
                                 if record.state.messages_received >= 5 {
                                     // robstride lol
@@ -244,7 +244,7 @@ impl Supervisor {
                         trace!("Processing outgoing command: {:?}", cmd);
                         match cmd {
                             TxCommand::Send { id, data } => {
-                                trace!(event = "CommandSentToTransport", can_id = id, data_len = data.len(), data_bytes = ?data, "Supervisor dispatching command to transport");
+                            debug!(event = "CommandSentToTransport", can_id = id, data_len = data.len(), data_bytes = ?data, "Supervisor dispatching command to transport");
                                 if let Err(e) = protocol_clone.send(id, &data).await {
                                     error!("Transport sender error: {}", e);
                                 }
