@@ -19,6 +19,12 @@ impl From<eyre::Report> for ErrReportWrapper {
     }
 }
 
+impl From<PyErr> for ErrReportWrapper {
+    fn from(err: PyErr) -> Self {
+        ErrReportWrapper(err.into())
+    }
+}
+
 impl From<ErrReportWrapper> for PyErr {
     fn from(err: ErrReportWrapper) -> PyErr {
         PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.0.to_string())
@@ -49,12 +55,12 @@ struct PyRobstrideActuatorCommand {
 #[pymethods]
 impl PyRobstrideActuatorCommand {
     #[new]
-    fn new(actuator_id: u32) -> Self {
+    fn new(actuator_id: u32, position: Option<f64>, velocity: Option<f64>, torque: Option<f64>) -> Self {
         Self {
             actuator_id,
-            position: None,
-            velocity: None,
-            torque: None,
+            position,
+            velocity,
+            torque,
         }
     }
 }
@@ -83,15 +89,15 @@ struct PyRobstrideConfigureRequest {
 #[pymethods]
 impl PyRobstrideConfigureRequest {
     #[new]
-    fn new(actuator_id: u32) -> Self {
+    fn new(actuator_id: u32, kp: Option<f64>, kd: Option<f64>, max_torque: Option<f64>, torque_enabled: Option<bool>, zero_position: Option<bool>, new_actuator_id: Option<u32>) -> Self {
         Self {
             actuator_id,
-            kp: None,
-            kd: None,
-            max_torque: None,
-            torque_enabled: None,
-            zero_position: None,
-            new_actuator_id: None,
+            kp,
+            kd,
+            max_torque,
+            torque_enabled,
+            zero_position,
+            new_actuator_id,
         }
     }
 }
@@ -141,14 +147,14 @@ impl PyRobstrideActuatorConfig {
 
 #[gen_stub_pyclass]
 #[pyclass]
-struct PyRobstrideActuator {
+struct PyRobstrideSupervisor {
     supervisor: Arc<Mutex<Supervisor>>,
     rt: Runtime,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideActuator {
+impl PyRobstrideSupervisor {
     #[new]
     fn new(
         ports: Vec<String>,
@@ -163,10 +169,17 @@ impl PyRobstrideActuator {
         let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
 
         let supervisor = rt.block_on(async {
-            let mut supervisor =
-                Supervisor::new(Duration::from_secs(1)).map_err(|e| ErrReportWrapper(e))?;
+            let mut supervisor = Supervisor::new(Duration::from_secs(1))
+                .map_err(|e| ErrReportWrapper(e))?;
+            let mut found_motors = vec![false; actuators_config.len()];
 
+            // Add transports
             for port in &ports {
+                Python::with_gil(|py| {
+                    py.run_bound(&format!("print('Adding transport for port: {}')", port), None, None)?;
+                    Ok::<_, PyErr>(())
+                })?;
+
                 if port.starts_with("/dev/tty") {
                     let serial = CH341Transport::new(port.clone())
                         .await
@@ -188,23 +201,67 @@ impl PyRobstrideActuator {
                 }
             }
 
-            // Scan for motors
+            // Start supervisor runner
+            let mut supervisor_runner = supervisor.clone_controller();
+            Python::with_gil(|py| {
+                py.run_bound("print('Starting supervisor runner...')", None, None)?;
+                Ok::<_, PyErr>(())
+            })?;
+
+            tokio::spawn(async move {
+                if let Err(e) = supervisor_runner.run(Duration::from_secs_f64(polling_interval)).await {
+                    let _ = Python::with_gil(|py| {
+                        py.run_bound(&format!("print('ERROR: Supervisor task failed: {}')", e), None, None)
+                    });
+                }
+            });
+
+            // Scan for motors on each port
             for port in &ports {
+                Python::with_gil(|py| {
+                    py.run_bound(&format!("print('Scanning for motors on port: {}')", port), None, None)?;
+                    Ok::<_, PyErr>(())
+                })?;
+
                 let discovered_ids = supervisor
                     .scan_bus(0xFD, port, &actuators_config)
                     .await
                     .map_err(|e| ErrReportWrapper(e))?;
-                for (motor_id, _) in &actuators_config {
-                    if !discovered_ids.contains(motor_id) {
-                        tracing::warn!("Configured motor not found - ID: {}", motor_id);
+
+                Python::with_gil(|py| {
+                    py.run_bound(&format!("print('Discovered IDs on {}: {:?}')", port, discovered_ids), None, None)?;
+                    Ok::<_, PyErr>(())
+                })?;
+
+                for (idx, (motor_id, _)) in actuators_config.iter().enumerate() {
+                    if discovered_ids.contains(motor_id) {
+                        found_motors[idx] = true;
                     }
+                }
+            }
+
+            // Log warnings for missing motors
+            for (idx, (motor_id, config)) in actuators_config.iter().enumerate() {
+                if !found_motors[idx] {
+                    Python::with_gil(|py| {
+                        py.run_bound(&format!("print('WARNING: Configured motor not found - ID: {}, Type: {:?}')", motor_id, config.actuator_type), None, None)?;
+                        Ok::<_, PyErr>(())
+                    })?;
+                } else {
+                    Python::with_gil(|py| {
+                        py.run_bound(&format!(
+                            "print('Found configured motor - ID: {}, Type: {:?}')",
+                            motor_id, config.actuator_type
+                        ), None, None)?;
+                        Ok::<_, PyErr>(())
+                    })?;
                 }
             }
 
             Ok(supervisor)
         })?;
 
-        Ok(PyRobstrideActuator {
+        Ok(PyRobstrideSupervisor {
             supervisor: Arc::new(Mutex::new(supervisor)),
             rt,
         })
@@ -327,9 +384,9 @@ impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
 }
 
 #[pymodule]
-fn robstride_bindings(m: &Bound<PyModule>) -> PyResult<()> {
+fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
-    m.add_class::<PyRobstrideActuator>()?;
+    m.add_class::<PyRobstrideSupervisor>()?;
     m.add_class::<PyRobstrideActuatorCommand>()?;
     m.add_class::<PyRobstrideConfigureRequest>()?;
     m.add_class::<PyRobstrideActuatorState>()?;

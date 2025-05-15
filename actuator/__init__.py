@@ -1,8 +1,11 @@
 """Defines the top-level API for the actuator package."""
 
 from .bindings import (
-    PyRobstrideActuator as RobstrideActuator,
+    PyRobstrideActuatorCommand as RobstrideActuatorCommand,
     PyRobstrideActuatorConfig as RobstrideActuatorConfig,
+    PyRobstrideActuatorState as RobstrideActuatorState,
+    PyRobstrideConfigureRequest as RobstrideConfigureRequest,
+    PyRobstrideSupervisor as RobstrideSupervisor,
     get_version,
 )
 
