@@ -260,14 +260,14 @@ impl Transport for StubTransport {
     }
 
     fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a> {
-        tracing::debug!("StubTransport::send: id={:04x}, data={:02x?}", id, data);
+        tracing::trace!("StubTransport::send: id={:04x}, data={:02x?}", id, data);
         Box::pin(async move { Ok(()) })
     }
 
     fn recv(&mut self) -> RecvFuture<'_> {
         let id = 0x2000100;
         let data = vec![0x7f, 0xfe, 0x80, 0x73, 0x7f, 0xff, 0x01, 0x18];
-        // tracing::debug!("StubTransport::recv: id={:04x}, data={:02x?}", id, data);
+        // tracing::trace!("StubTransport::recv: id={:04x}, data={:02x?}", id, data);
         Box::pin(async move {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             Ok((id, data))

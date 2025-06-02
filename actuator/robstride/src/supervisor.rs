@@ -218,7 +218,7 @@ impl Supervisor {
             });
 
         let protocol = Protocol::new(transport.clone(), frame_callback);
-        debug!("Created protocol for transport: {}", name);
+        trace!("Created protocol for transport: {}", name);
 
         // Spawn the transport handling task
         let mut protocol_clone = protocol.clone();
@@ -313,7 +313,7 @@ impl Supervisor {
         let mut actuators = self.actuators.write().await;
         actuators.insert(actuator_id, record);
 
-        debug!(
+        trace!(
             "Added actuator with ID: {} (type: {:?})",
             actuator_id, actuator_type
         );
@@ -446,7 +446,7 @@ impl Supervisor {
                             },
                         },
                     );
-                    debug!(
+                    trace!(
                         "Added actuator with ID: {} (type: {:?}) on {}",
                         id, actuator_type, transport_name
                     );
@@ -825,24 +825,24 @@ impl Supervisor {
                 feedback.torque = typed_feedback.torque_nm();
 
                 // Log feedback information
-                debug!("Motor {} feedback:", id);
-                debug!("  Angle: {:?}", feedback.angle);
-                debug!("  Velocity: {:?}", feedback.velocity);
-                debug!("  Torque: {:?}", feedback.torque);
-                debug!("  Temperature: {:?}", feedback.temperature);
-                debug!("  Faults:");
-                debug!("    Uncalibrated: {:?}", feedback.fault_uncalibrated);
-                debug!("    Hall encoding: {:?}", feedback.fault_hall_encoding);
-                debug!(
+                trace!("Motor {} feedback:", id);
+                trace!("  Angle: {:?}", feedback.angle);
+                trace!("  Velocity: {:?}", feedback.velocity);
+                trace!("  Torque: {:?}", feedback.torque);
+                trace!("  Temperature: {:?}", feedback.temperature);
+                trace!("  Faults:");
+                trace!("    Uncalibrated: {:?}", feedback.fault_uncalibrated);
+                trace!("    Hall encoding: {:?}", feedback.fault_hall_encoding);
+                trace!(
                     "    Magnetic encoding: {:?}",
                     feedback.fault_magnetic_encoding
                 );
-                debug!(
+                trace!(
                     "    Over temperature: {:?}",
                     feedback.fault_over_temperature
                 );
-                debug!("    Overcurrent: {:?}", feedback.fault_overcurrent);
-                debug!("    Undervoltage: {:?}", feedback.fault_undervoltage);
+                trace!("    Overcurrent: {:?}", feedback.fault_overcurrent);
+                trace!("    Undervoltage: {:?}", feedback.fault_undervoltage);
 
                 feedback.angle = normalize_radians(feedback.angle).0;
                 return Ok(Some((feedback, record.state.last_feedback)));
