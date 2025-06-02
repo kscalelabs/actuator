@@ -16,3 +16,4 @@ license = "MIT"
 repository = "https://github.com/kscalelabs/actuator"
 documentation = "https://docs.kscale.dev/actuators/introduction"
 readme = "README.md"
+uuid = { version = "1.6.1", features = ["v4"]}

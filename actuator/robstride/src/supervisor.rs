@@ -688,6 +688,8 @@ impl Supervisor {
     }
 
     pub async fn request_feedback(&self, id: u8) -> Result<()> {
+        let uuid = uuid::Uuid::new_v4();
+        debug!("supervisor::request_feedback({})::START", id);
         let actuators = self.actuators.read().await;
         let record = actuators.get(&id);
         if let Some(record) = record {
@@ -697,6 +699,7 @@ impl Supervisor {
         } else {
             error!("Actuator {} not found", id);
         }
+        debug!("supervisor::request_feedback({})::END", id);
         Ok(())
     }
 
