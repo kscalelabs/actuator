@@ -1,12 +1,11 @@
 use eyre::Result;
+
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+
 use tokio::sync::{mpsc, RwLock};
 use tokio::time;
 use tracing::{debug, error, info, trace, warn};
-#[cfg(feature = "json_logging")]
-use crate::json_logger::JsonLogger;
 
 use crate::{
     actuator::{normalize_value, TypedCommandData, TypedFeedbackData},
@@ -21,204 +20,18 @@ use crate::{
 };
 use crate::{ActuatorType, FaultFeedback};
 
+#[cfg(feature = "json_logging")]
+use crate::json_logger::JsonLogger;
+
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::io::AsyncWriteExt;
+
 // Add the StateUpdate enum at the top of the file
 #[derive(Debug)]
 enum StateUpdate {
     Feedback(FeedbackFrame),
     ObtainID(u8),
     Fault(FaultFeedback),
-}
-
-/// JSON log entry for actuator commands
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandLogEntry {
-    pub timestamp_us: u64,
-    pub actuator_id: u8,
-    pub actuator_type: String,
-    pub event_type: String, // "command"
-    pub target_angle_rad: f32,
-    pub target_velocity_rads: f32,
-    pub kp: f32,
-    pub kd: f32,
-    pub torque_nm: f32,
-}
-
-/// JSON log entry for actuator feedback
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeedbackLogEntry {
-    pub timestamp_us: u64,
-    pub actuator_id: u8,
-    pub actuator_type: String,
-    pub event_type: String, // "feedback"
-    pub actual_angle_rad: f32,
-    pub actual_velocity_rads: f32,
-    pub actual_torque_nm: f32,
-    pub temperature_c: f32,
-    pub fault_uncalibrated: bool,
-    pub fault_hall_encoding: bool,
-    pub fault_magnetic_encoding: bool,
-    pub fault_over_temperature: bool,
-    pub fault_overcurrent: bool,
-    pub fault_undervoltage: bool,
-}
-
-#[derive(Debug, Clone)]
-enum LogMessage {
-    Command(CommandLogEntry),
-    Feedback(FeedbackLogEntry),
-    Flush,
-    Shutdown,
-}
-
-pub struct JsonLogger {
-    tx: mpsc::Sender<LogMessage>,
-    _handle: tokio::task::JoinHandle<()>,
-}
-
-impl JsonLogger {
-    /// Create a new JSON logger with specified file path and buffer size
-    pub async fn new<P: AsRef<Path>>(
-        log_file_path: P,
-        buffer_size: usize,
-        flush_interval: Duration,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let (tx, mut rx) = mpsc::channel::<LogMessage>(buffer_size * 2);
-        let log_file_path = log_file_path.as_ref().to_path_buf();
-        
-        info!("Creating JSON logger with file: {:?}", log_file_path);
-        
-        // Spawn background task to handle file writing
-        let handle = tokio::spawn(async move {
-            let mut file = match OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_file_path)
-                .await
-            {
-                Ok(file) => file,
-                Err(e) => {
-                    error!("Failed to open log file {:?}: {}", log_file_path, e);
-                    return;
-                }
-            };
-            
-            let mut buffer = Vec::with_capacity(buffer_size);
-            let mut last_flush = Instant::now();
-            
-            info!("JSON logger started, writing to: {:?}", log_file_path);
-            
-            while let Some(msg) = rx.recv().await {
-                match msg {
-                    LogMessage::Command(entry) => {
-                        if let Ok(json) = serde_json::to_string(&entry) {
-                            buffer.push(json);
-                        }
-                    }
-                    LogMessage::Feedback(entry) => {
-                        if let Ok(json) = serde_json::to_string(&entry) {
-                            buffer.push(json);
-                        }
-                    }
-                    LogMessage::Flush => {
-                        // Force flush
-                        if !buffer.is_empty() {
-                            if let Err(e) = flush_buffer(&mut file, &mut buffer).await {
-                                error!("Failed to flush buffer: {}", e);
-                            }
-                            last_flush = Instant::now();
-                        }
-                    }
-                    LogMessage::Shutdown => {
-                        // Final flush and exit
-                        if !buffer.is_empty() {
-                            let _ = flush_buffer(&mut file, &mut buffer).await;
-                        }
-                        let _ = file.flush().await;
-                        info!("JSON logger shutdown complete");
-                        break;
-                    }
-                }
-                
-                // Auto-flush if buffer is full or time interval passed
-                if buffer.len() >= buffer_size || last_flush.elapsed() >= flush_interval {
-                    if !buffer.is_empty() {
-                        if let Err(e) = flush_buffer(&mut file, &mut buffer).await {
-                            error!("Failed to flush buffer: {}", e);
-                        }
-                        last_flush = Instant::now();
-                    }
-                }
-            }
-        });
-        
-        Ok(JsonLogger {
-            tx,
-            _handle: handle,
-        })
-    }
-    
-    /// Log a command sent to an actuator
-    pub async fn log_command(
-        &self,
-        actuator_id: u8,
-        actuator_type: ActuatorType,
-        command: &ControlCommand,
-    ) {
-        let entry = CommandLogEntry {
-            timestamp_us: get_timestamp_us(),
-            actuator_id,
-            actuator_type: format!("{:?}", actuator_type),
-            event_type: "command".to_string(),
-            target_angle_rad: command.target_angle,
-            target_velocity_rads: command.target_velocity,
-            kp: command.kp,
-            kd: command.kd,
-            torque_nm: command.torque,
-        };
-        
-        if let Err(e) = self.tx.try_send(LogMessage::Command(entry)) {
-            warn!("Failed to log command: {}", e);
-        }
-    }
-    
-    /// Log feedback received from an actuator
-    pub async fn log_feedback(
-        &self,
-        actuator_id: u8,
-        actuator_type: ActuatorType,
-        feedback: &FeedbackFrame,
-    ) {
-        let entry = FeedbackLogEntry {
-            timestamp_us: get_timestamp_us(),
-            actuator_id,
-            actuator_type: format!("{:?}", actuator_type),
-            event_type: "feedback".to_string(),
-            actual_angle_rad: feedback.angle,
-            actual_velocity_rads: feedback.velocity,
-            actual_torque_nm: feedback.torque,
-            temperature_c: feedback.temperature,
-            fault_uncalibrated: feedback.fault_uncalibrated,
-            fault_hall_encoding: feedback.fault_hall_encoding,
-            fault_magnetic_encoding: feedback.fault_magnetic_encoding,
-            fault_over_temperature: feedback.fault_over_temperature,
-            fault_overcurrent: feedback.fault_overcurrent,
-            fault_undervoltage: feedback.fault_undervoltage,
-        };
-        
-        if let Err(e) = self.tx.try_send(LogMessage::Feedback(entry)) {
-            warn!("Failed to log feedback: {}", e);
-        }
-    }
-    
-    /// Force flush all buffered logs
-    pub async fn flush(&self) {
-        let _ = self.tx.send(LogMessage::Flush).await;
-    }
-    
-    /// Shutdown the logger gracefully
-    pub async fn shutdown(&self) {
-        let _ = self.tx.send(LogMessage::Shutdown).await;
-    }
 }
 
 /// Helper function to flush buffer to file
@@ -289,7 +102,7 @@ pub struct Supervisor {
     feedback_timeout: Duration,
     state_update_tx: mpsc::Sender<StateUpdate>,
     #[cfg(feature = "json_logging")]
-    json_logger: Option<JsonLogger>,
+    json_logger: Option<Arc<JsonLogger>>,
 }
 
 fn half_revolutions(degrees: f32) -> i32 {
@@ -328,15 +141,6 @@ fn denormalize_radians(normalized_radians: f32, half_rotations: i32) -> f32 {
 }
 
 impl Supervisor {
-    #[cfg(feature = "json_logging")]
-    pub async fn enable_json_logging(
-        &mut self,
-        logger: Arc<JsonLogger>,
-    ) -> Result<()> {
-        self.json_logger = Some(logger);
-        info!("JSON logging enabled on supervisor");
-        Ok(())
-    }
     pub fn new(feedback_timeout: Duration) -> Result<Self> {
         let (state_update_tx, mut state_update_rx) = mpsc::channel(32);
 
@@ -365,15 +169,6 @@ impl Supervisor {
                                 record.state.last_feedback = SystemTime::now();
                                 record.state.messages_received += 1;
 
-                                 // Log the feedback
-                                #[cfg(feature = "json_logging")]
-                                if let Some(logger) = &self.json_logger {
-                                    logger.log_feedback(
-                                        feedback.motor_id,
-                                        record.state.actuator_type,
-                                        &feedback,
-                                    ).await;
-                                }
                                 if record.state.messages_received >= 5 {
                                     // robstride lol
                                     // wait for 5 messages before marking as ready
@@ -424,6 +219,7 @@ impl Supervisor {
         Ok(())
     }
 
+
     pub fn clone_controller(&self) -> Self {
         Self {
             actuators: self.actuators.clone(),
@@ -432,6 +228,8 @@ impl Supervisor {
             last_stats_time: self.last_stats_time,
             feedback_timeout: self.feedback_timeout,
             state_update_tx: self.state_update_tx.clone(),
+            #[cfg(feature = "json_logging")]
+            json_logger: self.json_logger.clone(),
         }
     }
 
@@ -1011,11 +809,6 @@ impl Supervisor {
         record.state.control_command.target_velocity = cmd.target_velocity;
         record.state.control_command.torque = cmd.torque;
 
-        // Log the command
-        #[cfg(feature = "json_logging")]
-        if let Some(logger) = &self.json_logger {
-            logger.log_command(id, record.state.actuator_type, &cmd).await;
-        }
 
         if cfg!(feature = "instant_command") {
             record
