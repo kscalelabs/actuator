@@ -18,6 +18,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 instant_command = []
+json_logging = ["serde_json", "tokio/fs"]
 
 [dependencies]
 
@@ -32,3 +33,4 @@ futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 num-traits = "0.2"
 num-derive = "0.4"
+serde_json = { version = "1.0", optional = true }
