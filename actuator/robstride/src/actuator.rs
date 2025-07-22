@@ -5,7 +5,7 @@ use eyre::Result;
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
-#[tracing::instrument(ret(Debug))]
+// #[tracing::instrument(ret(Debug))]
 pub fn normalize_value(
     value: f32,
     min: f32,
