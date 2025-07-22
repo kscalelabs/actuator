@@ -211,6 +211,7 @@ impl CommandData for ControlCommand {
         CommunicationType::Control
     }
     fn from_command(cmd: Command) -> Self {
+        println!("called");
         // Convert pairs of bytes to u16 using from_le_bytes
         let angle_raw = u16::from_be_bytes(cmd.data[0..2].try_into().unwrap());
         let velocity_raw = u16::from_be_bytes(cmd.data[2..4].try_into().unwrap());
