@@ -5,6 +5,7 @@ use eyre::Result;
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
+#[tracing::instrument(ret(Debug))]
 pub fn normalize_value(
     value: f32,
     min: f32,
@@ -13,10 +14,12 @@ pub fn normalize_value(
     out_range_max: f32,
 ) -> f32 {
     let range = max - min;
-    ((value - min) * (out_range_max - out_range_min) / range + out_range_min)
+    ((value - min) * ((out_range_max - out_range_min) / range) + out_range_min)
         .clamp(out_range_min, out_range_max)
 }
 
+
+#[tracing::instrument(ret(Debug))]
 pub fn denormalize_value(
     normalized: f32,
     min: f32,
