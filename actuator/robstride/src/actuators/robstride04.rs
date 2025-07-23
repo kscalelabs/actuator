@@ -100,6 +100,7 @@ impl TypedCommandData for RobStride04Command {
 }
 
 impl TypedFeedbackData for RobStride04Feedback {
+    #[tracing::instrument(ret(Debug))]
     fn from_feedback_frame(frame: FeedbackFrame) -> Self {
         Self {
             angle_rad: normalize_value(
