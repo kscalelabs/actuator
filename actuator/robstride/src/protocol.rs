@@ -31,25 +31,25 @@ impl Protocol {
     }
 
     pub async fn send(&mut self, id: u32, data: &[u8]) -> Result<(), Error> {
-        trace!(
-            "send {}:{} {:x}: {:02x?}",
-            self.transport.kind(),
-            self.transport.port(),
-            id,
-            data
-        );
+        // trace!(
+        //     "send {}:{} {:x}: {:02x?}",
+        //     self.transport.kind(),
+        //     self.transport.port(),
+        //     id,
+        //     data
+        // );
         self.transport.send(id, data).await
     }
 
     pub async fn recv(&mut self) -> Result<(u32, Vec<u8>), Error> {
         let (id, data) = self.transport.recv().await?;
-        trace!(
-            "recv {}:{} {:x}: {:02x?}",
-            self.transport.kind(),
-            self.transport.port(),
-            id,
-            data
-        );
+        // trace!(
+        //     "recv {}:{} {:x}: {:02x?}",
+        //     self.transport.kind(),
+        //     self.transport.port(),
+        //     id,
+        //     data
+        // );
 
         (self.callback)(id, data.clone());
 

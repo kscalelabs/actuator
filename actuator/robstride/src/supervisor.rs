@@ -195,12 +195,12 @@ impl Supervisor {
         let frame_callback: Arc<dyn Fn(u32, Vec<u8>) + Send + Sync + 'static> =
             Arc::new(move |id: u32, data: Vec<u8>| {
                 let cmd = Command::from_can_packet(id, data.clone());
-                trace!(
-                    "Transport callback received: id={:x}, data={:02x?}, cmd={:?}",
-                    id,
-                    data,
-                    cmd
-                );
+                // trace!(
+                //     "Transport callback received: id={:x}, data={:02x?}, cmd={:?}",
+                //     id,
+                //     data,
+                //     cmd
+                // );
 
                 if let Ok(cmd_frame) = cmd.to_frame() {
                     match cmd_frame {
@@ -232,7 +232,7 @@ impl Supervisor {
                     // Handle incoming messages
                     recv_result = protocol_clone.recv() => {
                         match recv_result {
-                            Ok(_) => trace!("Received message successfully"),
+                            Ok(_) => {}, //trace!("Received message successfully"),
                             Err(e) => {
                                 error!("Transport receiver error: {}", e);
                                 break;
@@ -241,7 +241,7 @@ impl Supervisor {
                     }
                     // Handle outgoing messages
                     Some(cmd) = rx.recv() => {
-                        trace!("Processing outgoing command: {:?}", cmd);
+                        // trace!("Processing outgoing command: {:?}", cmd);
                         match cmd {
                             TxCommand::Send { id, data } => {
                                 if let Err(e) = protocol_clone.send(id, &data).await {
@@ -826,24 +826,24 @@ impl Supervisor {
                 feedback.torque = typed_feedback.torque_nm();
 
                 // Log feedback information
-                debug!("Motor {} feedback:", id);
-                debug!("  Angle: {:?}", feedback.angle);
-                debug!("  Velocity: {:?}", feedback.velocity);
-                debug!("  Torque: {:?}", feedback.torque);
-                debug!("  Temperature: {:?}", feedback.temperature);
-                debug!("  Faults:");
-                debug!("    Uncalibrated: {:?}", feedback.fault_uncalibrated);
-                debug!("    Hall encoding: {:?}", feedback.fault_hall_encoding);
-                debug!(
-                    "    Magnetic encoding: {:?}",
-                    feedback.fault_magnetic_encoding
-                );
-                debug!(
-                    "    Over temperature: {:?}",
-                    feedback.fault_over_temperature
-                );
-                debug!("    Overcurrent: {:?}", feedback.fault_overcurrent);
-                debug!("    Undervoltage: {:?}", feedback.fault_undervoltage);
+                // debug!("Motor {} feedback:", id);
+                // debug!("  Angle: {:?}", feedback.angle);
+                // debug!("  Velocity: {:?}", feedback.velocity);
+                // debug!("  Torque: {:?}", feedback.torque);
+                // debug!("  Temperature: {:?}", feedback.temperature);
+                // debug!("  Faults:");
+                // debug!("    Uncalibrated: {:?}", feedback.fault_uncalibrated);
+                // debug!("    Hall encoding: {:?}", feedback.fault_hall_encoding);
+                // debug!(
+                //     "    Magnetic encoding: {:?}",
+                //     feedback.fault_magnetic_encoding
+                // );
+                // debug!(
+                //     "    Over temperature: {:?}",
+                //     feedback.fault_over_temperature
+                // );
+                // debug!("    Overcurrent: {:?}", feedback.fault_overcurrent);
+                // debug!("    Undervoltage: {:?}", feedback.fault_undervoltage);
 
                 feedback.angle = normalize_radians(feedback.angle).0;
                 return Ok(Some((feedback, record.state.last_feedback)));
