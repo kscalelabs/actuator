@@ -238,7 +238,7 @@ impl Actuator for RobStride03 {
         Ok(())
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip_all)]
     async fn get_feedback(&self) -> Result<()> {
         let cmd = Command {
             data: [0; 8],

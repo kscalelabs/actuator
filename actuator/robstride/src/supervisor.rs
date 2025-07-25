@@ -690,7 +690,7 @@ impl Supervisor {
         Ok(())
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     pub async fn request_feedback(&self, id: u8) -> Result<()> {
         let actuators = self.actuators.read().await;
         let record = actuators.get(&id);
@@ -798,6 +798,7 @@ impl Supervisor {
         record.actuator.control(cmd).await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_feedback(&self, id: u8) -> Result<Option<(FeedbackFrame, SystemTime)>> {
         let actuators = self.actuators.read().await;
         let record = actuators.get(&id);
