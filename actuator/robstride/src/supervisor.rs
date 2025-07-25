@@ -52,6 +52,7 @@ pub struct ControlConfig {
     pub max_current: Option<f32>,
 }
 
+#[derive(Debug)]
 pub struct TransportHandler {
     #[allow(unused)]
     protocol: Protocol,
@@ -60,11 +61,13 @@ pub struct TransportHandler {
     rx: mpsc::Receiver<TxCommand>,
 }
 
+#[derive(Debug)]
 struct ActuatorRecord {
     actuator: Box<dyn Actuator>,
     state: ActuatorState,
 }
 
+#[derive(Debug)]
 pub struct Supervisor {
     actuators: Arc<RwLock<HashMap<u8, ActuatorRecord>>>,
     transports: Arc<RwLock<HashMap<String, TransportHandler>>>,
@@ -687,6 +690,7 @@ impl Supervisor {
         Ok(())
     }
 
+    #[tracing::instrument]
     pub async fn request_feedback(&self, id: u8) -> Result<()> {
         let actuators = self.actuators.read().await;
         let record = actuators.get(&id);

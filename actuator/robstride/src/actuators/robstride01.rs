@@ -8,6 +8,7 @@ use crate::{
     SetZeroCommand, StopCommand, WriteCommand,
 };
 use async_trait::async_trait;
+use tracing::*;
 use eyre::{Result, WrapErr};
 use std::f32::consts::PI;
 use tokio::sync::mpsc;
@@ -237,6 +238,7 @@ impl Actuator for RobStride01 {
         Ok(())
     }
 
+    #[tracing::instrument]
     async fn get_feedback(&self) -> Result<()> {
         let cmd = Command {
             data: [0; 8],

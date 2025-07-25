@@ -100,7 +100,6 @@ impl TypedCommandData for RobStride04Command {
 }
 
 impl TypedFeedbackData for RobStride04Feedback {
-    #[tracing::instrument(ret(Debug))]
     fn from_feedback_frame(frame: FeedbackFrame) -> Self {
         Self {
             angle_rad: normalize_value(
@@ -238,6 +237,7 @@ impl Actuator for RobStride04 {
         Ok(())
     }
 
+    #[tracing::instrument]
     async fn get_feedback(&self) -> Result<()> {
         let cmd = Command {
             data: [0; 8],

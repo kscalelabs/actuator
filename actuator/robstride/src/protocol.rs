@@ -3,6 +3,17 @@ use eyre::Error;
 use std::sync::Arc;
 use tracing::trace;
 
+
+impl std::fmt::Debug for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Protocol {{ transport: {}, callback: <function> }}",
+            self.transport.kind()
+        )
+    }
+}
+
 pub struct Protocol {
     transport: TransportType,
     callback: Arc<dyn Fn(u32, Vec<u8>) + Send + Sync + 'static>,
