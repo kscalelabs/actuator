@@ -3,7 +3,7 @@
 import argparse
 import time
 
-from actuator import RobstrideActuator, RobstrideActuatorConfig
+from actuator import CH341TransportWrapper, RobstrideActuator, RobstrideActuatorConfig
 
 
 def main() -> None:
@@ -20,8 +20,10 @@ def main() -> None:
     _amplitude = args.amplitude
     _period = args.period
 
+    transport = CH341TransportWrapper(args.port_name)
+
     supervisor = RobstrideActuator(
-        ports=[args.port_name],
+        transports=[transport],
         py_actuators_config=[(args.motor_id, RobstrideActuatorConfig(args.motor_type))],
     )
 
