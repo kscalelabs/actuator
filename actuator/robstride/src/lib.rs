@@ -10,4 +10,6 @@ pub use actuator_types::*;
 pub use actuators::*;
 pub use protocol::Protocol;
 pub use supervisor::*;
-pub use transport::{CH341Transport, SocketCanTransport, StubTransport, Transport, TransportType};
+#[cfg(target_os = "linux")]
+pub use transport::SocketCanTransport;
+pub use transport::{CH341Transport, StubTransport, Transport, TransportType};

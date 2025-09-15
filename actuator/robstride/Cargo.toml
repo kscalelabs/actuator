@@ -23,7 +23,7 @@ instant_command = []
 
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
-socketcan = { version = "3.3", features = ["async-std"] }
+socketcan = { version = "3.3", features = ["async-std"], optional = true }
 tokio-serial = "5.4"
 eyre = "0.6"
 tracing = "0.1"
@@ -32,3 +32,6 @@ futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 num-traits = "0.2"
 num-derive = "0.4"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+socketcan = { version = "3.3", features = ["async-std"] }

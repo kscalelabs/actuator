@@ -2,9 +2,10 @@ use pyo3::prelude::PyErr;
 use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
+#[cfg(target_os = "linux")]
+use robstride::SocketCanTransport;
 use robstride::{
-    ActuatorConfiguration, ActuatorType, CH341Transport, ControlConfig, SocketCanTransport,
-    Supervisor, TransportType,
+    ActuatorConfiguration, ActuatorType, CH341Transport, ControlConfig, Supervisor, TransportType,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -176,13 +177,22 @@ impl PyRobstrideActuator {
                         .await
                         .map_err(|e| ErrReportWrapper(e))?;
                 } else if port.starts_with("can") {
-                    let can = SocketCanTransport::new(port.clone())
-                        .await
-                        .map_err(|e| ErrReportWrapper(e))?;
-                    supervisor
-                        .add_transport(port.clone(), TransportType::SocketCAN(can))
-                        .await
-                        .map_err(|e| ErrReportWrapper(e))?;
+                    #[cfg(target_os = "linux")]
+                    {
+                        let can = SocketCanTransport::new(port.clone())
+                            .await
+                            .map_err(|e| ErrReportWrapper(e))?;
+                        supervisor
+                            .add_transport(port.clone(), TransportType::SocketCAN(can))
+                            .await
+                            .map_err(|e| ErrReportWrapper(e))?;
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        return Err(ErrReportWrapper(eyre::eyre!(
+                            "SocketCAN is only supported on Linux"
+                        )));
+                    }
                 } else {
                     return Err(ErrReportWrapper(eyre::eyre!("Invalid port: {}", port)));
                 }
