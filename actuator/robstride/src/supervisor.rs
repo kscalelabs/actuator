@@ -9,11 +9,11 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
     actuator::{normalize_value, TypedCommandData, TypedFeedbackData},
     actuator_types::ActuatorConfiguration,
-    robstride00::{RobStride00, RobStride00Command, RobStride00Feedback, RobStride00Parameter},
-    robstride01::{RobStride01, RobStride01Command, RobStride01Feedback, RobStride01Parameter},
-    robstride02::{RobStride02, RobStride02Command, RobStride02Feedback, RobStride02Parameter},
-    robstride03::{RobStride03, RobStride03Command, RobStride03Feedback, RobStride03Parameter},
-    robstride04::{RobStride04, RobStride04Command, RobStride04Feedback, RobStride04Parameter},
+    robstride00::{RobStride00, RobStride00Command, RobStride00Feedback},
+    robstride01::{RobStride01, RobStride01Command, RobStride01Feedback},
+    robstride02::{RobStride02, RobStride02Command, RobStride02Feedback},
+    robstride03::{RobStride03, RobStride03Command, RobStride03Feedback},
+    robstride04::{RobStride04, RobStride04Command, RobStride04Feedback},
     transport::TransportType,
     Actuator, Command, ControlCommand, FeedbackFrame, Frame, Protocol, TxCommand,
 };
@@ -375,7 +375,7 @@ impl Supervisor {
             // Process any new IDs
             for id in discovered_ids {
                 let mut actuators = self.actuators.write().await;
-                if !actuators.contains_key(&id) {
+                if let std::collections::hash_map::Entry::Vacant(e) = actuators.entry(id) {
                     let (actuator, configuration): (Box<dyn Actuator>, ActuatorConfiguration) =
                         match actuator_configs
                             .iter()
@@ -415,37 +415,34 @@ impl Supervisor {
                         };
 
                     let actuator_type = actuator.actuator_type();
-                    actuators.insert(
-                        id,
-                        ActuatorRecord {
-                            actuator,
-                            state: ActuatorState {
-                                feedback: None,
-                                last_feedback: SystemTime::now(),
-                                last_command: SystemTime::now(),
-                                ready: false,
-                                enabled: false,
-                                control_config: ControlConfig {
-                                    kp: 0.0,
-                                    kd: 0.0,
-                                    max_torque: None,
-                                    max_velocity: None,
-                                    max_current: None,
-                                },
-                                control_command: ControlCommand {
-                                    target_angle: 0.0,
-                                    target_velocity: 0.0,
-                                    kp: 0.0,
-                                    kd: 0.0,
-                                    torque: 0.0,
-                                },
-                                configuration,
-                                messages_received: 0,
-                                half_revolutions: 0,
-                                actuator_type,
+                    e.insert(ActuatorRecord {
+                        actuator,
+                        state: ActuatorState {
+                            feedback: None,
+                            last_feedback: SystemTime::now(),
+                            last_command: SystemTime::now(),
+                            ready: false,
+                            enabled: false,
+                            control_config: ControlConfig {
+                                kp: 0.0,
+                                kd: 0.0,
+                                max_torque: None,
+                                max_velocity: None,
+                                max_current: None,
                             },
+                            control_command: ControlCommand {
+                                target_angle: 0.0,
+                                target_velocity: 0.0,
+                                kp: 0.0,
+                                kd: 0.0,
+                                torque: 0.0,
+                            },
+                            configuration,
+                            messages_received: 0,
+                            half_revolutions: 0,
+                            actuator_type,
                         },
-                    );
+                    });
                     debug!(
                         "Added actuator with ID: {} (type: {:?}) on {}",
                         id, actuator_type, transport_name
@@ -556,10 +553,8 @@ impl Supervisor {
                                 } else {
                                     record.state.last_command = now;
                                 }
-                            } else {
-                                if let Err(e) = record.actuator.get_feedback().await {
-                                    error!("Failed to get feedback from actuator {}: {}", id, e);
-                                }
+                            } else if let Err(e) = record.actuator.get_feedback().await {
+                                error!("Failed to get feedback from actuator {}: {}", id, e);
                             }
                         } else {
                             warn!(
@@ -567,10 +562,8 @@ impl Supervisor {
                                 id, record.state.control_command
                             );
                         }
-                    } else {
-                        if let Err(e) = record.actuator.get_feedback().await {
-                            error!("Failed to get feedback from actuator {}: {}", id, e);
-                        }
+                    } else if let Err(e) = record.actuator.get_feedback().await {
+                        error!("Failed to get feedback from actuator {}: {}", id, e);
                     }
                 }
 

@@ -3,7 +3,7 @@ use robstride::{
     Supervisor, TransportType,
 };
 use std::time::Duration;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]

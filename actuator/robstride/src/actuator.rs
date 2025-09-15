@@ -464,8 +464,7 @@ impl ReadCommand {
             return data as f32;
         }
         let le_data = u32::from_le(self.data);
-        let float_value = f32::from_bits(le_data);
-        float_value
+        f32::from_bits(le_data)
     }
 }
 

@@ -35,7 +35,7 @@ fn get_version() -> String {
 #[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
-struct PyRobstrideActuatorCommand {
+struct RobstrideActuatorCommand {
     #[pyo3(get, set)]
     actuator_id: u32,
     #[pyo3(get, set)]
@@ -48,7 +48,7 @@ struct PyRobstrideActuatorCommand {
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideActuatorCommand {
+impl RobstrideActuatorCommand {
     #[new]
     fn new(actuator_id: u32) -> Self {
         Self {
@@ -63,7 +63,7 @@ impl PyRobstrideActuatorCommand {
 #[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
-struct PyRobstrideConfigureRequest {
+struct RobstrideConfigureRequest {
     #[pyo3(get, set)]
     actuator_id: u32,
     #[pyo3(get, set)]
@@ -82,7 +82,7 @@ struct PyRobstrideConfigureRequest {
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideConfigureRequest {
+impl RobstrideConfigureRequest {
     #[new]
     fn new(actuator_id: u32) -> Self {
         Self {
@@ -100,7 +100,7 @@ impl PyRobstrideConfigureRequest {
 #[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
-struct PyRobstrideActuatorState {
+struct RobstrideActuatorState {
     #[pyo3(get)]
     actuator_id: u32,
     #[pyo3(get)]
@@ -118,7 +118,7 @@ struct PyRobstrideActuatorState {
 #[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
-struct PyRobstrideActuatorConfig {
+struct RobstrideActuatorConfig {
     #[pyo3(get, set)]
     actuator_type: u8,
     #[pyo3(get, set)]
@@ -129,7 +129,7 @@ struct PyRobstrideActuatorConfig {
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideActuatorConfig {
+impl RobstrideActuatorConfig {
     #[new]
     fn new(actuator_type: u8) -> Self {
         Self {
@@ -142,19 +142,18 @@ impl PyRobstrideActuatorConfig {
 
 #[gen_stub_pyclass]
 #[pyclass]
-struct PyRobstrideActuator {
+struct RobstrideActuator {
     supervisor: Arc<Mutex<Supervisor>>,
     rt: Runtime,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl PyRobstrideActuator {
+impl RobstrideActuator {
     #[new]
     fn new(
         ports: Vec<String>,
-        py_actuators_config: Vec<(u8, PyRobstrideActuatorConfig)>,
-        polling_interval: f64,
+        py_actuators_config: Vec<(u8, RobstrideActuatorConfig)>,
     ) -> PyResult<Self> {
         let actuators_config: Vec<(u8, ActuatorConfiguration)> = py_actuators_config
             .into_iter()
@@ -165,27 +164,27 @@ impl PyRobstrideActuator {
 
         let supervisor = rt.block_on(async {
             let mut supervisor =
-                Supervisor::new(Duration::from_secs(1)).map_err(|e| ErrReportWrapper(e))?;
+                Supervisor::new(Duration::from_secs(1)).map_err(ErrReportWrapper)?;
 
             for port in &ports {
                 if port.starts_with("/dev/tty") {
                     let serial = CH341Transport::new(port.clone())
                         .await
-                        .map_err(|e| ErrReportWrapper(e))?;
+                        .map_err(ErrReportWrapper)?;
                     supervisor
                         .add_transport(port.clone(), TransportType::CH341(serial))
                         .await
-                        .map_err(|e| ErrReportWrapper(e))?;
+                        .map_err(ErrReportWrapper)?;
                 } else if port.starts_with("can") {
                     #[cfg(target_os = "linux")]
                     {
                         let can = SocketCanTransport::new(port.clone())
                             .await
-                            .map_err(|e| ErrReportWrapper(e))?;
+                            .map_err(ErrReportWrapper)?;
                         supervisor
                             .add_transport(port.clone(), TransportType::SocketCAN(can))
                             .await
-                            .map_err(|e| ErrReportWrapper(e))?;
+                            .map_err(ErrReportWrapper)?;
                     }
                     #[cfg(not(target_os = "linux"))]
                     {
@@ -203,7 +202,7 @@ impl PyRobstrideActuator {
                 let discovered_ids = supervisor
                     .scan_bus(0xFD, port, &actuators_config)
                     .await
-                    .map_err(|e| ErrReportWrapper(e))?;
+                    .map_err(ErrReportWrapper)?;
                 for (motor_id, _) in &actuators_config {
                     if !discovered_ids.contains(motor_id) {
                         tracing::warn!("Configured motor not found - ID: {}", motor_id);
@@ -214,13 +213,13 @@ impl PyRobstrideActuator {
             Ok(supervisor)
         })?;
 
-        Ok(PyRobstrideActuator {
+        Ok(RobstrideActuator {
             supervisor: Arc::new(Mutex::new(supervisor)),
             rt,
         })
     }
 
-    fn command_actuators(&self, commands: Vec<PyRobstrideActuatorCommand>) -> PyResult<Vec<bool>> {
+    fn command_actuators(&self, commands: Vec<RobstrideActuatorCommand>) -> PyResult<Vec<bool>> {
         self.rt.block_on(async {
             let mut results = vec![];
             let mut supervisor = self.supervisor.lock().await;
@@ -243,7 +242,7 @@ impl PyRobstrideActuator {
         })
     }
 
-    fn configure_actuator(&self, config: PyRobstrideConfigureRequest) -> PyResult<bool> {
+    fn configure_actuator(&self, config: RobstrideConfigureRequest) -> PyResult<bool> {
         self.rt.block_on(async {
             let mut supervisor = self.supervisor.lock().await;
 
@@ -255,22 +254,22 @@ impl PyRobstrideActuator {
                 max_current: Some(10.0),
             };
 
-            let _result = supervisor
+            supervisor
                 .configure(config.actuator_id as u8, control_config)
                 .await
-                .map_err(|e| ErrReportWrapper(e))?;
+                .map_err(ErrReportWrapper)?;
 
             if let Some(torque_enabled) = config.torque_enabled {
                 if torque_enabled {
                     supervisor
                         .enable(config.actuator_id as u8)
                         .await
-                        .map_err(|e| ErrReportWrapper(e))?;
+                        .map_err(ErrReportWrapper)?;
                 } else {
                     supervisor
                         .disable(config.actuator_id as u8, true)
                         .await
-                        .map_err(|e| ErrReportWrapper(e))?;
+                        .map_err(ErrReportWrapper)?;
                 }
             }
 
@@ -278,31 +277,28 @@ impl PyRobstrideActuator {
                 supervisor
                     .zero(config.actuator_id as u8)
                     .await
-                    .map_err(|e| ErrReportWrapper(e))?;
+                    .map_err(ErrReportWrapper)?;
             }
 
             if let Some(new_id) = config.new_actuator_id {
                 supervisor
                     .change_id(config.actuator_id as u8, new_id as u8)
                     .await
-                    .map_err(|e| ErrReportWrapper(e))?;
+                    .map_err(ErrReportWrapper)?;
             }
 
             Ok(true)
         })
     }
 
-    fn get_actuators_state(
-        &self,
-        actuator_ids: Vec<u32>,
-    ) -> PyResult<Vec<PyRobstrideActuatorState>> {
+    fn get_actuators_state(&self, actuator_ids: Vec<u32>) -> PyResult<Vec<RobstrideActuatorState>> {
         self.rt.block_on(async {
             let mut responses = vec![];
             let supervisor = self.supervisor.lock().await;
 
             for id in actuator_ids {
                 if let Ok(Some((feedback, ts))) = supervisor.get_feedback(id as u8).await {
-                    responses.push(PyRobstrideActuatorState {
+                    responses.push(RobstrideActuatorState {
                         actuator_id: id,
                         online: ts.elapsed().unwrap_or(Duration::from_secs(1))
                             < Duration::from_secs(1),
@@ -318,8 +314,8 @@ impl PyRobstrideActuator {
     }
 }
 
-impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
-    fn from(config: PyRobstrideActuatorConfig) -> Self {
+impl From<RobstrideActuatorConfig> for robstride::ActuatorConfiguration {
+    fn from(config: RobstrideActuatorConfig) -> Self {
         Self {
             actuator_type: match config.actuator_type {
                 0 => ActuatorType::RobStride00,
@@ -339,11 +335,11 @@ impl From<PyRobstrideActuatorConfig> for robstride::ActuatorConfiguration {
 #[pymodule]
 fn robstride_bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
-    m.add_class::<PyRobstrideActuator>()?;
-    m.add_class::<PyRobstrideActuatorCommand>()?;
-    m.add_class::<PyRobstrideConfigureRequest>()?;
-    m.add_class::<PyRobstrideActuatorState>()?;
-    m.add_class::<PyRobstrideActuatorConfig>()?;
+    m.add_class::<RobstrideActuator>()?;
+    m.add_class::<RobstrideActuatorCommand>()?;
+    m.add_class::<RobstrideConfigureRequest>()?;
+    m.add_class::<RobstrideActuatorState>()?;
+    m.add_class::<RobstrideActuatorConfig>()?;
     Ok(())
 }
 
