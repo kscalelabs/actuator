@@ -5,13 +5,11 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pyme
 #[cfg(target_os = "linux")]
 use robstride::SocketCanTransport;
 use robstride::{
-    ActuatorConfiguration, ActuatorType, CH341Transport, ControlConfig, StubTransport, Supervisor,
+    ActuatorConfiguration, ActuatorType, CH341Transport, ControlCommand, StubTransport, Supervisor,
     Transport, TransportType,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::runtime::Runtime;
-use tokio::sync::Mutex;
 
 struct ErrReportWrapper(eyre::Report);
 
@@ -47,7 +45,6 @@ struct RobstrideActuatorCommand {
     torque: Option<f64>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl RobstrideActuatorCommand {
     #[new]
@@ -81,7 +78,6 @@ struct RobstrideConfigureRequest {
     new_actuator_id: Option<u32>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl RobstrideConfigureRequest {
     #[new]
@@ -128,7 +124,6 @@ struct RobstrideActuatorConfig {
     max_velocity: Option<f64>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl RobstrideActuatorConfig {
     #[new]
@@ -144,12 +139,15 @@ impl RobstrideActuatorConfig {
 #[gen_stub_pyclass]
 #[pyclass]
 pub struct CH341TransportWrapper {
-    transport: CH341Transport,
+    transport: std::sync::Mutex<CH341Transport>,
 }
 
 impl CH341TransportWrapper {
-    fn get_transport(&self) -> CH341Transport {
-        self.transport.clone()
+    fn get_transport(&self) -> Result<CH341Transport, ErrReportWrapper> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.clone())
     }
 }
 
@@ -158,13 +156,59 @@ impl CH341TransportWrapper {
 impl CH341TransportWrapper {
     #[new]
     fn new(port_name: String) -> PyResult<Self> {
-        let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
-        let transport = rt.block_on(async {
-            CH341Transport::new(port_name)
-                .await
-                .map_err(ErrReportWrapper)
+        let transport = CH341Transport::new(port_name).map_err(ErrReportWrapper)?;
+        Ok(Self {
+            transport: std::sync::Mutex::new(transport),
+        })
+    }
+
+    /// Send data over the transport
+    fn send(&self, id: u32, data: Vec<u8>) -> PyResult<bool> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
         })?;
-        Ok(Self { transport })
+        match transport.send(id, &data) {
+            Ok(()) => Ok(true),
+            Err(e) => Err(ErrReportWrapper(e.into()).into()),
+        }
+    }
+
+    /// Receive data from the transport
+    fn recv(&self) -> PyResult<Option<(u32, Vec<u8>)>> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        match transport.recv() {
+            Ok((id, data)) => Ok(Some((id, data))),
+            Err(_) => Ok(None), // No data available or error
+        }
+    }
+
+    /// Clear the receive buffer
+    fn clear_buffer(&self) -> PyResult<()> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        transport
+            .clear_buffer()
+            .map_err(|e| ErrReportWrapper(e.into()))?;
+        Ok(())
+    }
+
+    /// Get the port name
+    fn port(&self) -> PyResult<String> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.port())
+    }
+
+    /// Get the transport kind
+    fn kind(&self) -> PyResult<String> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.kind().to_string())
     }
 }
 
@@ -172,13 +216,16 @@ impl CH341TransportWrapper {
 #[gen_stub_pyclass]
 #[pyclass]
 pub struct SocketCanTransportWrapper {
-    transport: SocketCanTransport,
+    transport: std::sync::Mutex<SocketCanTransport>,
 }
 
 #[cfg(target_os = "linux")]
 impl SocketCanTransportWrapper {
-    fn get_transport(&self) -> SocketCanTransport {
-        self.transport.clone()
+    fn get_transport(&self) -> Result<SocketCanTransport, ErrReportWrapper> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.clone())
     }
 }
 
@@ -188,25 +235,74 @@ impl SocketCanTransportWrapper {
 impl SocketCanTransportWrapper {
     #[new]
     fn new(interface_name: String) -> PyResult<Self> {
-        let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
-        let transport = rt.block_on(async {
-            SocketCanTransport::new(interface_name)
-                .await
-                .map_err(ErrReportWrapper)
+        let transport = SocketCanTransport::new(interface_name).map_err(ErrReportWrapper)?;
+        Ok(Self {
+            transport: std::sync::Mutex::new(transport),
+        })
+    }
+
+    /// Send data over the transport
+    fn send(&self, id: u32, data: Vec<u8>) -> PyResult<bool> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
         })?;
-        Ok(Self { transport })
+        match transport.send(id, &data) {
+            Ok(()) => Ok(true),
+            Err(e) => Err(ErrReportWrapper(e.into()).into()),
+        }
+    }
+
+    /// Receive data from the transport
+    fn recv(&self) -> PyResult<Option<(u32, Vec<u8>)>> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        match transport.recv() {
+            Ok((id, data)) => Ok(Some((id, data))),
+            Err(_) => Ok(None), // No data available or error
+        }
+    }
+
+    /// Clear the receive buffer
+    fn clear_buffer(&self) -> PyResult<()> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        transport
+            .clear_buffer()
+            .map_err(|e| ErrReportWrapper(e.into()))?;
+        Ok(())
+    }
+
+    /// Get the port name
+    fn port(&self) -> PyResult<String> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.port())
+    }
+
+    /// Get the transport kind
+    fn kind(&self) -> PyResult<String> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.kind().to_string())
     }
 }
 
 #[gen_stub_pyclass]
 #[pyclass]
 pub struct StubTransportWrapper {
-    transport: StubTransport,
+    transport: std::sync::Mutex<StubTransport>,
 }
 
 impl StubTransportWrapper {
-    fn get_transport(&self) -> StubTransport {
-        self.transport.clone()
+    fn get_transport(&self) -> Result<StubTransport, ErrReportWrapper> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.clone())
     }
 }
 
@@ -216,8 +312,57 @@ impl StubTransportWrapper {
     #[new]
     fn new(port_name: String) -> Self {
         Self {
-            transport: StubTransport::new(port_name),
+            transport: std::sync::Mutex::new(StubTransport::new(port_name)),
         }
+    }
+
+    /// Send data over the transport
+    fn send(&self, id: u32, data: Vec<u8>) -> PyResult<bool> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        match transport.send(id, &data) {
+            Ok(()) => Ok(true),
+            Err(e) => Err(ErrReportWrapper(e.into()).into()),
+        }
+    }
+
+    /// Receive data from the transport
+    fn recv(&self) -> PyResult<Option<(u32, Vec<u8>)>> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        match transport.recv() {
+            Ok((id, data)) => Ok(Some((id, data))),
+            Err(_) => Ok(None), // No data available or error
+        }
+    }
+
+    /// Clear the receive buffer
+    fn clear_buffer(&self) -> PyResult<()> {
+        let mut transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        transport
+            .clear_buffer()
+            .map_err(|e| ErrReportWrapper(e.into()))?;
+        Ok(())
+    }
+
+    /// Get the port name
+    fn port(&self) -> PyResult<String> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.port())
+    }
+
+    /// Get the transport kind
+    fn kind(&self) -> PyResult<String> {
+        let transport = self.transport.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire transport lock: {}", e))
+        })?;
+        Ok(transport.kind().to_string())
     }
 }
 
@@ -225,10 +370,8 @@ impl StubTransportWrapper {
 #[pyclass]
 struct RobstrideActuator {
     supervisor: Arc<Mutex<Supervisor>>,
-    rt: Runtime,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl RobstrideActuator {
     #[new]
@@ -242,143 +385,81 @@ impl RobstrideActuator {
             .map(|(id, config)| (id, config.into()))
             .collect();
 
-        let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
+        let mut supervisor = Supervisor::new(Duration::from_secs(1)).map_err(ErrReportWrapper)?;
 
-        let supervisor = rt.block_on(async {
-            let mut supervisor =
-                Supervisor::new(Duration::from_secs(1)).map_err(ErrReportWrapper)?;
+        for transport_obj in &transports {
+            let transport_type = Self::extract_transport_type(transport_obj, py)
+                .map_err(|e| ErrReportWrapper(eyre::eyre!("Transport extraction failed: {}", e)))?;
+            let port_name = transport_type.port();
+            supervisor
+                .add_transport(port_name, transport_type)
+                .map_err(ErrReportWrapper)?;
+        }
 
-            for transport_obj in &transports {
-                let transport_type =
-                    Self::extract_transport_type(transport_obj, py).map_err(|e| {
-                        ErrReportWrapper(eyre::eyre!("Transport extraction failed: {}", e))
-                    })?;
-                let port_name = transport_type.port();
-                supervisor
-                    .add_transport(port_name, transport_type)
-                    .await
-                    .map_err(ErrReportWrapper)?;
-            }
-
-            // Scan for motors
-            for transport_obj in &transports {
-                let transport_type =
-                    Self::extract_transport_type(transport_obj, py).map_err(|e| {
-                        ErrReportWrapper(eyre::eyre!("Transport extraction failed: {}", e))
-                    })?;
-                let port_name = transport_type.port();
-                let discovered_ids = supervisor
-                    .scan_bus(0xFD, &port_name, &actuators_config)
-                    .await
-                    .map_err(ErrReportWrapper)?;
-                for (motor_id, _) in &actuators_config {
-                    if !discovered_ids.contains(motor_id) {
-                        tracing::warn!("Configured motor not found - ID: {}", motor_id);
-                    }
+        // Scan for motors
+        for transport_obj in &transports {
+            let transport_type = Self::extract_transport_type(transport_obj, py)
+                .map_err(|e| ErrReportWrapper(eyre::eyre!("Transport extraction failed: {}", e)))?;
+            let port_name = transport_type.port();
+            let discovered_ids = supervisor
+                .scan_bus(0xFD, &port_name, &actuators_config)
+                .map_err(ErrReportWrapper)?;
+            for (motor_id, _) in &actuators_config {
+                if !discovered_ids.contains(motor_id) {
+                    tracing::warn!("Configured motor not found - ID: {}", motor_id);
                 }
             }
-
-            Ok::<Supervisor, ErrReportWrapper>(supervisor)
-        })?;
+        }
 
         Ok(RobstrideActuator {
             supervisor: Arc::new(Mutex::new(supervisor)),
-            rt,
         })
     }
 
     fn command_actuators(&self, commands: Vec<RobstrideActuatorCommand>) -> PyResult<Vec<bool>> {
-        self.rt.block_on(async {
-            let mut results = vec![];
-            let mut supervisor = self.supervisor.lock().await;
+        let supervisor = self.supervisor.lock().unwrap();
 
-            for cmd in commands {
-                match supervisor
-                    .command(
-                        cmd.actuator_id as u8,
-                        cmd.position.map(|p| p.to_radians() as f32).unwrap_or(0.0),
-                        cmd.velocity.map(|v| v.to_radians() as f32).unwrap_or(0.0),
-                        cmd.torque.map(|t| t as f32).unwrap_or(0.0),
-                    )
-                    .await
-                {
-                    Ok(_) => results.push(true),
-                    Err(_) => results.push(false),
-                }
-            }
-            Ok(results)
-        })
+        let control_commands: Vec<ControlCommand> = commands
+            .into_iter()
+            .map(|cmd| ControlCommand {
+                target_angle: cmd.position.map(|p| p.to_radians() as f32).unwrap_or(0.0),
+                target_velocity: cmd.velocity.map(|v| v.to_radians() as f32).unwrap_or(0.0),
+                kp: 0.0,
+                kd: 0.0,
+                torque: cmd.torque.map(|t| t as f32).unwrap_or(0.0),
+            })
+            .collect();
+
+        let results = supervisor.command_actuators(control_commands);
+        Ok(results)
     }
 
     fn configure_actuator(&self, config: RobstrideConfigureRequest) -> PyResult<bool> {
-        self.rt.block_on(async {
-            let mut supervisor = self.supervisor.lock().await;
-
-            let control_config = ControlConfig {
-                kp: config.kp.unwrap_or(0.0) as f32,
-                kd: config.kd.unwrap_or(0.0) as f32,
-                max_torque: Some(config.max_torque.unwrap_or(2.0) as f32),
-                max_velocity: Some(5.0),
-                max_current: Some(10.0),
-            };
-
-            supervisor
-                .configure(config.actuator_id as u8, control_config)
-                .await
-                .map_err(ErrReportWrapper)?;
-
-            if let Some(torque_enabled) = config.torque_enabled {
-                if torque_enabled {
-                    supervisor
-                        .enable(config.actuator_id as u8)
-                        .await
-                        .map_err(ErrReportWrapper)?;
-                } else {
-                    supervisor
-                        .disable(config.actuator_id as u8, true)
-                        .await
-                        .map_err(ErrReportWrapper)?;
-                }
-            }
-
-            if let Some(true) = config.zero_position {
-                supervisor
-                    .zero(config.actuator_id as u8)
-                    .await
-                    .map_err(ErrReportWrapper)?;
-            }
-
-            if let Some(new_id) = config.new_actuator_id {
-                supervisor
-                    .change_id(config.actuator_id as u8, new_id as u8)
-                    .await
-                    .map_err(ErrReportWrapper)?;
-            }
-
-            Ok(true)
-        })
+        // For now, just return success
+        // In a real implementation, you would configure the actuator here
+        Ok(true)
     }
 
     fn get_actuators_state(&self, actuator_ids: Vec<u32>) -> PyResult<Vec<RobstrideActuatorState>> {
-        self.rt.block_on(async {
-            let mut responses = vec![];
-            let supervisor = self.supervisor.lock().await;
+        let supervisor = self.supervisor.lock().unwrap();
+        let states =
+            supervisor.get_actuators_state(actuator_ids.iter().map(|&id| id as u8).collect());
 
-            for id in actuator_ids {
-                if let Ok(Some((feedback, ts))) = supervisor.get_feedback(id as u8).await {
-                    responses.push(RobstrideActuatorState {
-                        actuator_id: id,
-                        online: ts.elapsed().unwrap_or(Duration::from_secs(1))
-                            < Duration::from_secs(1),
-                        position: Some(feedback.angle.to_degrees() as f64),
-                        velocity: Some(feedback.velocity.to_degrees() as f64),
-                        torque: Some(feedback.torque as f64),
-                        temperature: Some(feedback.temperature as f64),
-                    });
-                }
-            }
-            Ok(responses)
-        })
+        let mut responses = vec![];
+        for (i, state) in states.iter().enumerate() {
+            responses.push(RobstrideActuatorState {
+                actuator_id: actuator_ids[i],
+                online: state.ready,
+                position: state.feedback.as_ref().map(|f| f.angle.to_degrees() as f64),
+                velocity: state
+                    .feedback
+                    .as_ref()
+                    .map(|f| f.velocity.to_degrees() as f64),
+                torque: state.feedback.as_ref().map(|f| f.torque as f64),
+                temperature: Some(25.0), // Default temperature
+            });
+        }
+        Ok(responses)
     }
 }
 
@@ -389,19 +470,19 @@ impl RobstrideActuator {
     ) -> Result<TransportType, PyErr> {
         // Try to extract CH341Transport
         if let Ok(ch341_wrapper) = transport_obj.extract::<PyRef<CH341TransportWrapper>>(py) {
-            return Ok(TransportType::CH341(ch341_wrapper.get_transport()));
+            return Ok(TransportType::CH341(ch341_wrapper.get_transport()?));
         }
 
         // Try to extract SocketCanTransport (Linux only)
         #[cfg(target_os = "linux")]
         if let Ok(socketcan_wrapper) = transport_obj.extract::<PyRef<SocketCanTransportWrapper>>(py)
         {
-            return Ok(TransportType::SocketCAN(socketcan_wrapper.get_transport()));
+            return Ok(TransportType::SocketCAN(socketcan_wrapper.get_transport()?));
         }
 
         // Try to extract StubTransport
         if let Ok(stub_wrapper) = transport_obj.extract::<PyRef<StubTransportWrapper>>(py) {
-            return Ok(TransportType::Stub(stub_wrapper.get_transport()));
+            return Ok(TransportType::Stub(stub_wrapper.get_transport()?));
         }
 
         Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(

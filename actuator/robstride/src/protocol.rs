@@ -19,7 +19,7 @@ impl Protocol {
         }
     }
 
-    pub async fn send(&mut self, id: u32, data: &[u8]) -> Result<(), Error> {
+    pub fn send(&mut self, id: u32, data: &[u8]) -> Result<(), Error> {
         trace!(
             "send {}:{} {:x}: {:02x?}",
             self.transport.kind(),
@@ -27,11 +27,11 @@ impl Protocol {
             id,
             data
         );
-        self.transport.send(id, data).await
+        self.transport.send(id, data)
     }
 
-    pub async fn recv(&mut self) -> Result<(u32, Vec<u8>), Error> {
-        let (id, data) = self.transport.recv().await?;
+    pub fn recv(&mut self) -> Result<(u32, Vec<u8>), Error> {
+        let (id, data) = self.transport.recv()?;
         trace!(
             "recv {}:{} {:x}: {:02x?}",
             self.transport.kind(),
@@ -45,10 +45,8 @@ impl Protocol {
         Ok((id, data))
     }
 
-    pub async fn process_incoming(&mut self) -> Result<(), Error> {
-        loop {
-            let (_id, _data) = self.recv().await?;
-        }
+    pub fn clear_buffer(&mut self) -> Result<(), Error> {
+        self.transport.clear_buffer()
     }
 }
 
