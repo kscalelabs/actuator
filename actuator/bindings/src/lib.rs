@@ -9,7 +9,6 @@ use robstride::{
     Transport, TransportType,
 };
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 struct ErrReportWrapper(eyre::Report);
 
@@ -386,7 +385,7 @@ impl RobstrideActuator {
             .map(|(id, config)| (id, config.into()))
             .collect();
 
-        let mut supervisor = Supervisor::new(Duration::from_secs(1)).map_err(ErrReportWrapper)?;
+        let mut supervisor = Supervisor::new().map_err(ErrReportWrapper)?;
 
         for transport_obj in &transports {
             let transport_type = Self::extract_transport_type(transport_obj, py)
@@ -434,12 +433,14 @@ impl RobstrideActuator {
             })
             .collect();
 
-        let results = supervisor.command_actuators(control_commands);
+        let results = supervisor
+            .command_actuators(control_commands)
+            .map_err(|e| ErrReportWrapper(e.into()))?;
         Ok(results)
     }
 
     /// Configure the actuator
-    fn configure_actuator(&self, config: RobstrideConfigureRequest) -> PyResult<bool> {
+    fn configure_actuator(&self, _config: RobstrideConfigureRequest) -> PyResult<bool> {
         // For now, just return success
         // In a real implementation, you would configure the actuator here
         Ok(true)
@@ -447,9 +448,12 @@ impl RobstrideActuator {
 
     /// Get the state of the actuators
     fn get_actuators_state(&self, actuator_ids: Vec<u32>) -> PyResult<Vec<RobstrideActuatorState>> {
-        let supervisor = self.supervisor.lock().unwrap();
-        let states =
-            supervisor.get_actuators_state(actuator_ids.iter().map(|&id| id as u8).collect());
+        let supervisor = self.supervisor.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire supervisor lock: {}", e))
+        })?;
+        let states = supervisor
+            .get_actuators_state(actuator_ids.iter().map(|&id| id as u8).collect())
+            .map_err(|e| ErrReportWrapper(e.into()))?;
 
         let mut responses = vec![];
         for (i, state) in states.iter().enumerate() {

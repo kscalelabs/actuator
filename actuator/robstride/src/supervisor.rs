@@ -74,7 +74,7 @@ impl Supervisor {
         actuator_id: u8,
         actuator_type: ActuatorType,
         configuration: ActuatorConfiguration,
-    ) {
+    ) -> Result<()> {
         let state = ActuatorState {
             feedback: None,
             last_feedback: SystemTime::now(),
@@ -111,6 +111,8 @@ impl Supervisor {
             "Added actuator with ID: {} (type: {:?})",
             actuator_id, actuator_type
         );
+
+        Ok(())
     }
 
     pub fn scan_bus(
@@ -141,7 +143,7 @@ impl Supervisor {
 
         // For now, just add the configured actuators
         for (id, config) in actuator_configs {
-            self.add_actuator(*id, config.actuator_type, config.clone());
+            self.add_actuator(*id, config.actuator_type, config.clone())?;
             let mut discovered = self
                 .discovered_ids
                 .write()
@@ -156,7 +158,7 @@ impl Supervisor {
         Ok(discovered.clone())
     }
 
-    pub fn get_actuators_state(&self, actuator_ids: Vec<u8>) -> Vec<ActuatorState> {
+    pub fn get_actuators_state(&self, actuator_ids: Vec<u8>) -> Result<Vec<ActuatorState>> {
         let actuators = self
             .actuators
             .read()
@@ -169,10 +171,10 @@ impl Supervisor {
             }
         }
 
-        states
+        Ok(states)
     }
 
-    pub fn command_actuators(&self, commands: Vec<ControlCommand>) -> Vec<bool> {
+    pub fn command_actuators(&self, commands: Vec<ControlCommand>) -> Result<Vec<bool>> {
         let mut results = Vec::new();
 
         for _command in commands {
@@ -180,7 +182,7 @@ impl Supervisor {
             results.push(true);
         }
 
-        results
+        Ok(results)
     }
 
     pub fn run(&mut self, _interval: Duration) -> Result<()> {

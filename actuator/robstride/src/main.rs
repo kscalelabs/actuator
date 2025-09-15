@@ -1,6 +1,6 @@
 use robstride::{ActuatorConfiguration, ActuatorType, StubTransport, Supervisor, TransportType};
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 fn main() -> eyre::Result<()> {
@@ -13,7 +13,7 @@ fn main() -> eyre::Result<()> {
         )
         .init();
 
-    let mut supervisor = Supervisor::new(Duration::from_millis(1000))?;
+    let supervisor = Supervisor::new()?;
 
     // Initialize SocketCAN transport
     // let socketcan = SocketCanTransport::new("can0".to_string())?;
@@ -31,7 +31,7 @@ fn main() -> eyre::Result<()> {
             actuator_type: ActuatorType::RobStride02,
             ..Default::default()
         },
-    );
+    )?;
 
     info!("Supervisor running with stub transport");
     info!("Press Ctrl+C to exit");
@@ -42,7 +42,7 @@ fn main() -> eyre::Result<()> {
 
         // Check actuator status
         let states = supervisor.get_actuators_state(vec![1]);
-        if let Some(state) = states.first() {
+        if let Some(state) = states?.first() {
             if state.ready {
                 info!(
                     "Actuator 1: online={}, position={:.2}°, velocity={:.2}°/s, torque={:.2}Nm",
