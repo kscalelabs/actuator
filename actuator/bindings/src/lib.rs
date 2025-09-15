@@ -5,7 +5,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pyme
 #[cfg(target_os = "linux")]
 use robstride::SocketCanTransport;
 use robstride::{
-    ActuatorConfiguration, ActuatorType, CH341Transport, ControlConfig, Supervisor, TransportType,
+    ActuatorConfiguration, ActuatorType, CH341Transport, ControlConfig, StubTransport, Supervisor,
+    TransportType,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -192,6 +193,12 @@ impl RobstrideActuator {
                             "SocketCAN is only supported on Linux"
                         )));
                     }
+                } else if port.starts_with("stub") {
+                    let stub = StubTransport::new(port.clone());
+                    supervisor
+                        .add_transport(port.clone(), TransportType::Stub(stub))
+                        .await
+                        .map_err(ErrReportWrapper)?;
                 } else {
                     return Err(ErrReportWrapper(eyre::eyre!("Invalid port: {}", port)));
                 }
@@ -333,7 +340,7 @@ impl From<RobstrideActuatorConfig> for robstride::ActuatorConfiguration {
 }
 
 #[pymodule]
-fn robstride_bindings(m: &Bound<PyModule>) -> PyResult<()> {
+fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_class::<RobstrideActuator>()?;
     m.add_class::<RobstrideActuatorCommand>()?;
