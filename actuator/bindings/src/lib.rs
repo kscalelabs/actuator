@@ -309,9 +309,9 @@ impl StubTransportWrapper {
 #[pymethods]
 impl StubTransportWrapper {
     #[new]
-    fn new(port_name: String) -> Self {
+    fn new() -> Self {
         Self {
-            transport: std::sync::Mutex::new(StubTransport::new(port_name)),
+            transport: std::sync::Mutex::new(StubTransport::new()),
         }
     }
 

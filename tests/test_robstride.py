@@ -5,10 +5,15 @@ from actuator import RobstrideActuator, RobstrideActuatorConfig, StubTransportWr
 
 def test_robstride() -> None:
     # Create transport object instead of using port string
-    stub_transport = StubTransportWrapper("stub")
+    transport = StubTransportWrapper()
+    data = [0x7f, 0xfe, 0x80, 0x73, 0x7f, 0xff, 0x01, 0x18]
+    transport.send(1, data)
+    recv_id, recv_state = transport.recv()
+    assert recv_id == 1
+    assert recv_state == data
 
     supervisor = RobstrideActuator(
-        transports=[stub_transport],
+        transports=[transport],
         py_actuators_config=[(1, RobstrideActuatorConfig(1))],
     )
 

@@ -85,7 +85,6 @@ pub struct SocketCanTransport {
 }
 
 pub struct StubTransport {
-    port_name: String,
     last_command: Option<(u32, Vec<u8>)>,
 }
 
@@ -113,11 +112,8 @@ impl SocketCanTransport {
 }
 
 impl StubTransport {
-    pub fn new(port_name: String) -> Self {
-        Self {
-            port_name,
-            last_command: None,
-        }
+    pub fn new() -> Self {
+        Self { last_command: None }
     }
 }
 
@@ -283,7 +279,7 @@ impl Transport for SocketCanTransport {
 
 impl Transport for StubTransport {
     fn port(&self) -> String {
-        self.port_name.clone()
+        "stub".to_string()
     }
 
     fn kind(&self) -> &'static str {
@@ -350,7 +346,6 @@ impl Clone for SocketCanTransport {
 impl Clone for StubTransport {
     fn clone(&self) -> Self {
         Self {
-            port_name: self.port_name.clone(),
             last_command: self.last_command.clone(),
         }
     }

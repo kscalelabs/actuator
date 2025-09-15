@@ -20,7 +20,7 @@ fn main() -> eyre::Result<()> {
     // supervisor
     //     .add_transport("socketcan".to_string(), TransportType::SocketCAN(socketcan))?;
 
-    let stub = StubTransport::new("stub".to_string());
+    let stub = StubTransport::new();
     supervisor.add_transport("stub".to_string(), TransportType::Stub(stub))?;
 
     // Add a simple actuator for testing
