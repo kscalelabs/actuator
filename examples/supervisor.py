@@ -23,7 +23,6 @@ def main() -> None:
     supervisor = RobstrideActuator(
         ports=[args.port_name],
         py_actuators_config=[(args.motor_id, RobstrideActuatorConfig(args.motor_type))],
-        polling_interval=args.sleep,
     )
 
     while True:

@@ -30,6 +30,10 @@ warn_redundant_casts = true
 incremental = true
 namespace_packages = false
 
+exclude = [
+    "actuator/bindings.pyi",
+]
+
 [[tool.mypy.overrides]]
 
 module = [
@@ -42,7 +46,7 @@ ignore_missing_imports = true
 
 module = ["actuator.bindings"]
 
-disable_error_code = ["no-untyped-def"]
+ignore_errors = true
 
 [tool.isort]
 
@@ -52,13 +56,15 @@ profile = "black"
 
 line-length = 120
 target-version = "py310"
+exclude = [
+    "actuator/bindings.pyi",
+]
 
 [tool.ruff.lint]
 
 select = ["ANN", "D", "E", "F", "I", "N", "PGH", "PLC", "PLE", "PLR", "PLW", "W"]
 
 ignore = [
-    "ANN101", "ANN102",
     "D101", "D102", "D103", "D104", "D105", "D106", "D107",
     "N812", "N817",
     "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004",

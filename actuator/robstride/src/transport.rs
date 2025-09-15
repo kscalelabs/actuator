@@ -1,5 +1,7 @@
 use eyre::Error;
+#[cfg(target_os = "linux")]
 use socketcan::async_std::CanSocket;
+#[cfg(target_os = "linux")]
 use socketcan::{EmbeddedFrame, ExtendedId};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -18,6 +20,7 @@ type RecvFuture<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = RecvRes
 #[derive(Clone)]
 pub enum TransportType {
     CH341(CH341Transport),
+    #[cfg(target_os = "linux")]
     SocketCAN(SocketCanTransport),
     Stub(StubTransport),
 }
@@ -26,6 +29,7 @@ impl Transport for TransportType {
     fn kind(&self) -> &'static str {
         match self {
             TransportType::CH341(t) => t.kind(),
+            #[cfg(target_os = "linux")]
             TransportType::SocketCAN(t) => t.kind(),
             TransportType::Stub(t) => t.kind(),
         }
@@ -34,6 +38,7 @@ impl Transport for TransportType {
     fn port(&self) -> String {
         match self {
             TransportType::CH341(t) => t.port(),
+            #[cfg(target_os = "linux")]
             TransportType::SocketCAN(t) => t.port(),
             TransportType::Stub(t) => t.port(),
         }
@@ -42,6 +47,7 @@ impl Transport for TransportType {
     fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a> {
         match self {
             TransportType::CH341(t) => t.send(id, data),
+            #[cfg(target_os = "linux")]
             TransportType::SocketCAN(t) => t.send(id, data),
             TransportType::Stub(t) => t.send(id, data),
         }
@@ -50,6 +56,7 @@ impl Transport for TransportType {
     fn recv(&mut self) -> RecvFuture<'_> {
         match self {
             TransportType::CH341(t) => t.recv(),
+            #[cfg(target_os = "linux")]
             TransportType::SocketCAN(t) => t.recv(),
             TransportType::Stub(t) => t.recv(),
         }
@@ -68,6 +75,7 @@ pub struct CH341Transport {
     port_name: String,
 }
 
+#[cfg(target_os = "linux")]
 pub struct SocketCanTransport {
     socket: Arc<TokioMutex<CanSocket>>,
     interface_name: String,
@@ -87,6 +95,7 @@ impl CH341Transport {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl SocketCanTransport {
     pub async fn new(interface_name: String) -> Result<Self, Error> {
         let socket = CanSocket::open(&interface_name)?;
@@ -208,6 +217,7 @@ fn parse_message(buf: &[u8]) -> Result<(u32, Vec<u8>, usize), Error> {
     Ok((id, data, total_len))
 }
 
+#[cfg(target_os = "linux")]
 impl Transport for SocketCanTransport {
     fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a> {
         let socket = self.socket.clone();
@@ -284,6 +294,7 @@ impl Clone for CH341Transport {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Clone for SocketCanTransport {
     fn clone(&self) -> Self {
         Self {
