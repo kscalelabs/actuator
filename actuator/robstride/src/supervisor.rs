@@ -1,8 +1,8 @@
 use eyre::Result;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace};
 
 use crate::{
     actuator_types::ActuatorConfiguration,
@@ -43,18 +43,14 @@ pub struct Supervisor {
     actuators: Arc<RwLock<HashMap<u8, ActuatorState>>>,
     transports: Arc<RwLock<HashMap<String, TransportHandler>>>,
     discovered_ids: Arc<RwLock<Vec<u8>>>,
-    last_stats_time: SystemTime,
-    feedback_timeout: Duration,
 }
 
 impl Supervisor {
-    pub fn new(feedback_timeout: Duration) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let supervisor = Self {
             actuators: Arc::new(RwLock::new(HashMap::new())),
             transports: Arc::new(RwLock::new(HashMap::new())),
             discovered_ids: Arc::new(RwLock::new(Vec::new())),
-            last_stats_time: SystemTime::now(),
-            feedback_timeout,
         };
 
         Ok(supervisor)
@@ -63,7 +59,10 @@ impl Supervisor {
     pub fn add_transport(&self, name: String, transport: TransportType) -> Result<()> {
         info!("Adding transport: {}", name);
 
-        let mut transports = self.transports.write().unwrap();
+        let mut transports = self
+            .transports
+            .write()
+            .map_err(|e| eyre::eyre!("Failed to acquire transports lock: {}", e))?;
         transports.insert(name.clone(), TransportHandler { transport });
         info!("Transport {} added successfully", name);
 
@@ -102,7 +101,10 @@ impl Supervisor {
             actuator_type,
         };
 
-        let mut actuators = self.actuators.write().unwrap();
+        let mut actuators = self
+            .actuators
+            .write()
+            .map_err(|e| eyre::eyre!("Failed to acquire actuators lock: {}", e))?;
         actuators.insert(actuator_id, state);
 
         debug!(
@@ -118,13 +120,19 @@ impl Supervisor {
         actuator_configs: &[(u8, ActuatorConfiguration)],
     ) -> Result<Vec<u8>> {
         // Get the transport protocol
-        let mut transports = self.transports.write().unwrap();
+        let mut transports = self
+            .transports
+            .write()
+            .map_err(|e| eyre::eyre!("Failed to acquire transports lock: {}", e))?;
         let transport_handler = transports
             .get_mut(transport_name)
             .ok_or_else(|| eyre::eyre!("Transport not found: {}", transport_name))?;
 
         {
-            let mut discovered = self.discovered_ids.write().unwrap();
+            let mut discovered = self
+                .discovered_ids
+                .write()
+                .map_err(|e| eyre::eyre!("Failed to acquire discovered ids lock: {}", e))?;
             discovered.clear();
         }
 
@@ -134,16 +142,25 @@ impl Supervisor {
         // For now, just add the configured actuators
         for (id, config) in actuator_configs {
             self.add_actuator(*id, config.actuator_type, config.clone());
-            let mut discovered = self.discovered_ids.write().unwrap();
+            let mut discovered = self
+                .discovered_ids
+                .write()
+                .map_err(|e| eyre::eyre!("Failed to acquire discovered ids lock: {}", e))?;
             discovered.push(*id);
         }
 
-        let discovered = self.discovered_ids.read().unwrap();
+        let discovered = self
+            .discovered_ids
+            .read()
+            .map_err(|e| eyre::eyre!("Failed to acquire discovered ids lock: {}", e))?;
         Ok(discovered.clone())
     }
 
     pub fn get_actuators_state(&self, actuator_ids: Vec<u8>) -> Vec<ActuatorState> {
-        let actuators = self.actuators.read().unwrap();
+        let actuators = self
+            .actuators
+            .read()
+            .map_err(|e| eyre::eyre!("Failed to acquire actuators lock: {}", e))?;
         let mut states = Vec::new();
 
         for id in actuator_ids {
@@ -170,7 +187,10 @@ impl Supervisor {
         // Simple synchronous run loop
         loop {
             // Process any incoming messages from transports
-            let mut transports = self.transports.write().unwrap();
+            let mut transports = self
+                .transports
+                .write()
+                .map_err(|e| eyre::eyre!("Failed to acquire transports lock: {}", e))?;
             for (name, transport_handler) in transports.iter_mut() {
                 match transport_handler.transport.recv() {
                     Ok((_id, _data)) => {

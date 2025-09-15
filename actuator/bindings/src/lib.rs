@@ -372,6 +372,7 @@ struct RobstrideActuator {
     supervisor: Arc<Mutex<Supervisor>>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl RobstrideActuator {
     #[new]
@@ -416,8 +417,11 @@ impl RobstrideActuator {
         })
     }
 
+    /// Update the setpoints for the actuators
     fn command_actuators(&self, commands: Vec<RobstrideActuatorCommand>) -> PyResult<Vec<bool>> {
-        let supervisor = self.supervisor.lock().unwrap();
+        let supervisor = self.supervisor.lock().map_err(|e| {
+            ErrReportWrapper(eyre::eyre!("Failed to acquire supervisor lock: {}", e))
+        })?;
 
         let control_commands: Vec<ControlCommand> = commands
             .into_iter()
@@ -434,12 +438,14 @@ impl RobstrideActuator {
         Ok(results)
     }
 
+    /// Configure the actuator
     fn configure_actuator(&self, config: RobstrideConfigureRequest) -> PyResult<bool> {
         // For now, just return success
         // In a real implementation, you would configure the actuator here
         Ok(true)
     }
 
+    /// Get the state of the actuators
     fn get_actuators_state(&self, actuator_ids: Vec<u32>) -> PyResult<Vec<RobstrideActuatorState>> {
         let supervisor = self.supervisor.lock().unwrap();
         let states =
