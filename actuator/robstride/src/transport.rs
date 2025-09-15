@@ -1,21 +1,14 @@
 use eyre::Error;
+use serialport::SerialPort;
 #[cfg(target_os = "linux")]
-use socketcan::async_std::CanSocket;
-#[cfg(target_os = "linux")]
-use socketcan::{EmbeddedFrame, ExtendedId};
-use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex as TokioMutex;
-use tokio_serial::{SerialPortBuilderExt, SerialStream};
+use socketcan::{CanSocket, EmbeddedFrame, ExtendedId};
+use std::io::{Read, Write};
+use std::sync::Mutex;
 
 /// Result type for send operations
 type SendResult = Result<(), Error>;
 /// Result type for receive operations
 type RecvResult = Result<(u32, Vec<u8>), Error>;
-/// Future type for send operations
-type SendFuture<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = SendResult> + Send + 'a>>;
-/// Future type for receive operations
-type RecvFuture<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = RecvResult> + Send + 'a>>;
 
 #[derive(Clone)]
 pub enum TransportType {
@@ -44,7 +37,7 @@ impl Transport for TransportType {
         }
     }
 
-    fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a> {
+    fn send(&mut self, id: u32, data: &[u8]) -> SendResult {
         match self {
             TransportType::CH341(t) => t.send(id, data),
             #[cfg(target_os = "linux")]
@@ -53,7 +46,7 @@ impl Transport for TransportType {
         }
     }
 
-    fn recv(&mut self) -> RecvFuture<'_> {
+    fn recv(&mut self) -> RecvResult {
         match self {
             TransportType::CH341(t) => t.recv(),
             #[cfg(target_os = "linux")]
@@ -61,35 +54,47 @@ impl Transport for TransportType {
             TransportType::Stub(t) => t.recv(),
         }
     }
+
+    fn clear_buffer(&mut self) -> Result<(), Error> {
+        match self {
+            TransportType::CH341(t) => t.clear_buffer(),
+            #[cfg(target_os = "linux")]
+            TransportType::SocketCAN(t) => t.clear_buffer(),
+            TransportType::Stub(t) => t.clear_buffer(),
+        }
+    }
 }
 
 pub trait Transport {
     fn kind(&self) -> &'static str;
     fn port(&self) -> String;
-    fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a>;
-    fn recv(&mut self) -> RecvFuture<'_>;
+    fn send(&mut self, id: u32, data: &[u8]) -> SendResult;
+    fn recv(&mut self) -> RecvResult;
+    fn clear_buffer(&mut self) -> Result<(), Error>;
 }
 
 pub struct CH341Transport {
-    ser: Arc<TokioMutex<SerialStream>>,
+    ser: Mutex<Box<dyn SerialPort>>,
     port_name: String,
 }
 
 #[cfg(target_os = "linux")]
 pub struct SocketCanTransport {
-    socket: Arc<TokioMutex<CanSocket>>,
+    socket: Mutex<CanSocket>,
     interface_name: String,
 }
 
 pub struct StubTransport {
-    port_name: String,
+    last_command: Option<(u32, Vec<u8>)>,
 }
 
 impl CH341Transport {
-    pub async fn new(port_name: String) -> Result<Self, Error> {
-        let ser = tokio_serial::new(&port_name, 921600).open_native_async()?;
+    pub fn new(port_name: String) -> Result<Self, Error> {
+        let ser = serialport::new(&port_name, 921600)
+            .timeout(std::time::Duration::from_millis(100))
+            .open()?;
         Ok(Self {
-            ser: Arc::new(TokioMutex::new(ser)),
+            ser: Mutex::new(ser),
             port_name,
         })
     }
@@ -97,72 +102,79 @@ impl CH341Transport {
 
 #[cfg(target_os = "linux")]
 impl SocketCanTransport {
-    pub async fn new(interface_name: String) -> Result<Self, Error> {
+    pub fn new(interface_name: String) -> Result<Self, Error> {
         let socket = CanSocket::open(&interface_name)?;
         Ok(Self {
-            socket: Arc::new(TokioMutex::new(socket)),
+            socket: Mutex::new(socket),
             interface_name,
         })
     }
 }
 
 impl StubTransport {
-    pub fn new(port_name: String) -> Self {
-        Self { port_name }
+    pub fn new() -> Self {
+        Self { last_command: None }
     }
 }
 
 impl Transport for CH341Transport {
-    fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a> {
-        let ser = self.ser.clone();
-        Box::pin(async move {
-            let mut pkt = Vec::new();
-            pkt.extend_from_slice(b"AT");
-            let addr = (id << 3) | 0x4;
-            pkt.extend_from_slice(&addr.to_be_bytes());
-            pkt.push(data.len() as u8);
-            pkt.extend_from_slice(data);
-            pkt.extend_from_slice(b"\r\n");
+    fn send(&mut self, id: u32, data: &[u8]) -> SendResult {
+        let mut pkt = Vec::new();
+        pkt.extend_from_slice(b"AT");
+        let addr = (id << 3) | 0x4;
+        pkt.extend_from_slice(&addr.to_be_bytes());
+        pkt.push(data.len() as u8);
+        pkt.extend_from_slice(data);
+        pkt.extend_from_slice(b"\r\n");
 
-            {
-                let mut ser = ser.lock().await;
-                ser.write_all(&pkt).await?;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_nanos(20)).await;
-            Ok(())
-        })
+        {
+            let mut ser = self.ser.lock().unwrap();
+            ser.write_all(&pkt)?;
+        }
+        std::thread::sleep(std::time::Duration::from_nanos(20));
+        Ok(())
     }
 
-    fn recv(&mut self) -> RecvFuture<'_> {
-        let ser = self.ser.clone();
-        Box::pin(async move {
-            let mut buf = vec![0; 1024];
-            let mut pos = 0;
+    fn recv(&mut self) -> RecvResult {
+        let mut buf = vec![0; 1024];
+        let mut pos = 0;
 
-            loop {
-                let n = {
-                    let mut ser = ser.lock().await;
-                    ser.read(&mut buf[pos..]).await?
-                };
+        loop {
+            let n = {
+                let mut ser = self.ser.lock().unwrap();
+                ser.read(&mut buf[pos..])?
+            };
 
-                if n == 0 {
-                    return Err(eyre::eyre!("EOF"));
-                }
-                pos += n;
+            if n == 0 {
+                return Err(eyre::eyre!("EOF"));
+            }
+            pos += n;
 
-                for i in 0..pos.saturating_sub(7) {
-                    if buf[i] == b'A' && buf[i + 1] == b'T' {
-                        if let Ok((id, data, _msg_len)) = parse_message(&buf[i..pos]) {
-                            return Ok((id, data));
-                        }
+            for i in 0..pos.saturating_sub(7) {
+                if buf[i] == b'A' && buf[i + 1] == b'T' {
+                    if let Ok((id, data, _msg_len)) = parse_message(&buf[i..pos]) {
+                        return Ok((id, data));
                     }
                 }
-
-                if pos >= buf.len() - 8 {
-                    return Err(eyre::eyre!("Buffer full without finding valid message"));
-                }
             }
-        })
+
+            if pos >= buf.len() - 8 {
+                return Err(eyre::eyre!("Buffer full without finding valid message"));
+            }
+        }
+    }
+
+    fn clear_buffer(&mut self) -> Result<(), Error> {
+        let mut ser = self.ser.lock().unwrap();
+        let mut buf = vec![0; 1024];
+        loop {
+            match ser.read(&mut buf) {
+                Ok(0) => break,    // No more data
+                Ok(_) => continue, // Discard data
+                Err(_) => break,   // Error or timeout
+            }
+        }
+        Ok(())
     }
 
     fn kind(&self) -> &'static str {
@@ -219,36 +231,41 @@ fn parse_message(buf: &[u8]) -> Result<(u32, Vec<u8>, usize), Error> {
 
 #[cfg(target_os = "linux")]
 impl Transport for SocketCanTransport {
-    fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a> {
-        let socket = self.socket.clone();
-        Box::pin(async move {
-            let extended_id =
-                ExtendedId::new(id).ok_or_else(|| eyre::eyre!("Invalid CAN ID: {}", id))?;
-            let msg = socketcan::CanFrame::new(extended_id, data)
-                .ok_or_else(|| eyre::eyre!("Failed to create CAN frame"))?;
+    fn send(&mut self, id: u32, data: &[u8]) -> SendResult {
+        let extended_id =
+            ExtendedId::new(id).ok_or_else(|| eyre::eyre!("Invalid CAN ID: {}", id))?;
+        let msg = socketcan::CanFrame::new(extended_id, data)
+            .ok_or_else(|| eyre::eyre!("Failed to create CAN frame"))?;
 
-            {
-                let socket = socket.lock().await;
-                socket.write_frame(&msg).await?;
-            }
-            Ok(())
-        })
+        {
+            let mut socket = self.socket.lock().unwrap();
+            socket.write_frame(&msg)?;
+        }
+        Ok(())
     }
 
-    fn recv(&mut self) -> RecvFuture<'_> {
-        let socket = self.socket.clone();
-        Box::pin(async move {
-            let frame = {
-                let socket = socket.lock().await;
-                socket.read_frame().await?
-            };
+    fn recv(&mut self) -> RecvResult {
+        let frame = {
+            let mut socket = self.socket.lock().unwrap();
+            socket.read_frame()?
+        };
 
-            let id = match frame.id() {
-                socketcan::Id::Standard(id) => id.as_raw() as u32,
-                socketcan::Id::Extended(id) => id.as_raw(),
-            };
-            Ok((id, frame.data().to_vec()))
-        })
+        let id = match frame.id() {
+            socketcan::Id::Standard(id) => id.as_raw() as u32,
+            socketcan::Id::Extended(id) => id.as_raw(),
+        };
+        Ok((id, frame.data().to_vec()))
+    }
+
+    fn clear_buffer(&mut self) -> Result<(), Error> {
+        let mut socket = self.socket.lock().unwrap();
+        loop {
+            match socket.read_frame() {
+                Ok(_) => continue, // Discard frame
+                Err(_) => break,   // Error or timeout
+            }
+        }
+        Ok(())
     }
 
     fn kind(&self) -> &'static str {
@@ -262,33 +279,50 @@ impl Transport for SocketCanTransport {
 
 impl Transport for StubTransport {
     fn port(&self) -> String {
-        self.port_name.clone()
+        "stub".to_string()
     }
 
     fn kind(&self) -> &'static str {
         "Stub"
     }
 
-    fn send<'a>(&'a mut self, id: u32, data: &'a [u8]) -> SendFuture<'a> {
-        tracing::debug!("StubTransport::send: id={:04x}, data={:02x?}", id, data);
-        Box::pin(async move { Ok(()) })
+    fn send(&mut self, id: u32, data: &[u8]) -> SendResult {
+        // Store the command for later retrieval
+        self.last_command = Some((id, data.to_vec()));
+        Ok(())
     }
 
-    fn recv(&mut self) -> RecvFuture<'_> {
-        let id = 0x2000100;
-        let data = vec![0x7f, 0xfe, 0x80, 0x73, 0x7f, 0xff, 0x01, 0x18];
-        // tracing::debug!("StubTransport::recv: id={:04x}, data={:02x?}", id, data);
-        Box::pin(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            Ok((id, data))
-        })
+    fn recv(&mut self) -> RecvResult {
+        // Return the last command if available, otherwise return a default response
+        let (id, data) = self.last_command.take().unwrap_or_else(|| {
+            (
+                0x2000100,
+                vec![0x7f, 0xfe, 0x80, 0x73, 0x7f, 0xff, 0x01, 0x18],
+            )
+        });
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        Ok((id, data))
+    }
+
+    fn clear_buffer(&mut self) -> Result<(), Error> {
+        // Clear the stored command
+        self.last_command = None;
+        Ok(())
     }
 }
 
 impl Clone for CH341Transport {
     fn clone(&self) -> Self {
+        // Note: This is a simplified clone that creates a new connection
+        // In practice, you might want to handle this differently
         Self {
-            ser: self.ser.clone(),
+            ser: Mutex::new(
+                serialport::new(&self.port_name, 921600)
+                    .timeout(std::time::Duration::from_millis(100))
+                    .open()
+                    .unwrap_or_else(|_| panic!("Failed to clone CH341Transport")),
+            ),
             port_name: self.port_name.clone(),
         }
     }
@@ -297,8 +331,13 @@ impl Clone for CH341Transport {
 #[cfg(target_os = "linux")]
 impl Clone for SocketCanTransport {
     fn clone(&self) -> Self {
+        // Note: This is a simplified clone that creates a new connection
+        // In practice, you might want to handle this differently
         Self {
-            socket: self.socket.clone(),
+            socket: Mutex::new(
+                CanSocket::open(&self.interface_name)
+                    .unwrap_or_else(|_| panic!("Failed to clone SocketCanTransport")),
+            ),
             interface_name: self.interface_name.clone(),
         }
     }
@@ -307,7 +346,7 @@ impl Clone for SocketCanTransport {
 impl Clone for StubTransport {
     fn clone(&self) -> Self {
         Self {
-            port_name: self.port_name.clone(),
+            last_command: self.last_command.clone(),
         }
     }
 }

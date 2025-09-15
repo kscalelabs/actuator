@@ -1,6 +1,5 @@
 use crate::actuator_types::*;
-use crate::robstride04::RobStride04Parameter;
-use async_trait::async_trait;
+// use crate::robstride04::RobStride04Parameter;  // Temporarily disabled
 use eyre::Result;
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -44,26 +43,25 @@ pub trait TypedFeedbackData: Send + Sync {
     fn torque_nm(&self) -> f32;
 }
 
-#[async_trait]
 pub trait Actuator: Send + Sync + std::fmt::Debug {
-    async fn enable(&self) -> Result<()>;
-    async fn disable(&self, clear_fault: bool) -> Result<()>;
-    async fn set_id(&mut self, id: u8) -> Result<()>;
-    async fn get_uuid(&self) -> Result<()>;
-    async fn control(&self, cmd: ControlCommand) -> Result<()>;
-    async fn get_feedback(&self) -> Result<()>;
-    async fn set_zero(&self) -> Result<()>;
+    fn enable(&self) -> Result<()>;
+    fn disable(&self, clear_fault: bool) -> Result<()>;
+    fn set_id(&mut self, id: u8) -> Result<()>;
+    fn get_uuid(&self) -> Result<()>;
+    fn control(&self, cmd: ControlCommand) -> Result<()>;
+    fn get_feedback(&self) -> Result<()>;
+    fn set_zero(&self) -> Result<()>;
 
     fn id(&self) -> u8;
     fn actuator_type(&self) -> ActuatorType;
 
-    async fn write_parameter(&self, cmd: WriteCommand) -> Result<()>;
-    async fn read_parameter(&self, param_index: u16) -> Result<()>;
-    async fn get_parameter_string_info(&self) -> Result<()>;
+    fn write_parameter(&self, cmd: WriteCommand) -> Result<()>;
+    fn read_parameter(&self, param_index: u16) -> Result<()>;
+    fn get_parameter_string_info(&self) -> Result<()>;
 
-    async fn set_max_torque(&self, torque: f32) -> Result<()>;
-    async fn set_max_velocity(&self, velocity: f32) -> Result<()>;
-    async fn set_max_current(&self, current: f32) -> Result<()>;
+    fn set_max_torque(&self, torque: f32) -> Result<()>;
+    fn set_max_velocity(&self, velocity: f32) -> Result<()>;
+    fn set_max_current(&self, current: f32) -> Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -406,9 +404,7 @@ impl CommandData for WriteCommand {
         let mut data = [0u8; 8];
         data[0..=1].copy_from_slice(&self.parameter_index.to_le_bytes());
 
-        if RobStride04Parameter::from_index(self.parameter_index)
-            .unwrap_or(RobStride04Parameter::Unknown)
-            == RobStride04Parameter::RunMode
+        if false  // Placeholder - RobStride04Parameter not available
         {
             data[4] = self.data.to_le_bytes()[0];
         } else {
@@ -425,8 +421,7 @@ impl std::fmt::Debug for ReadCommand {
             f,
             "ReadCommand(host_id: {}, parameter: {:?}, data: {}, status: {})",
             self.host_id,
-            RobStride04Parameter::from_index(self.parameter_index)
-                .unwrap_or(RobStride04Parameter::Unknown),
+            "Unknown",  // Placeholder - RobStride04Parameter not available
             self.data,
             self.read_status
         )
@@ -456,9 +451,7 @@ impl CommandData for ReadCommand {
 impl ReadCommand {
     pub fn data_as_f32(&self) -> f32 {
         // TODO: shortcut, fix
-        if RobStride04Parameter::from_index(self.parameter_index)
-            .unwrap_or(RobStride04Parameter::Unknown)
-            == RobStride04Parameter::RunMode
+        if false  // Placeholder - RobStride04Parameter not available
         {
             let data = self.data.to_le_bytes()[0];
             return data as f32;

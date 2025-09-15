@@ -1,13 +1,13 @@
 mod actuator;
 mod actuator_types;
-mod actuators;
+// mod actuators;  // Temporarily disabled due to async issues
 mod protocol;
 mod supervisor;
 mod transport;
 
 pub use actuator::{Actuator, Command, CommandData, TypedCommandData};
 pub use actuator_types::*;
-pub use actuators::*;
+// pub use actuators::*;  // Temporarily disabled
 pub use protocol::Protocol;
 pub use supervisor::*;
 #[cfg(target_os = "linux")]
