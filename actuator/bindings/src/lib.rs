@@ -6,7 +6,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pyme
 use robstride::SocketCanTransport;
 use robstride::{
     ActuatorConfiguration, ActuatorType, CH341Transport, ControlConfig, StubTransport, Supervisor,
-    TransportType,
+    Transport, TransportType,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -143,6 +143,86 @@ impl RobstrideActuatorConfig {
 
 #[gen_stub_pyclass]
 #[pyclass]
+pub struct CH341TransportWrapper {
+    transport: CH341Transport,
+}
+
+impl CH341TransportWrapper {
+    fn get_transport(&self) -> CH341Transport {
+        self.transport.clone()
+    }
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl CH341TransportWrapper {
+    #[new]
+    fn new(port_name: String) -> PyResult<Self> {
+        let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
+        let transport = rt.block_on(async {
+            CH341Transport::new(port_name)
+                .await
+                .map_err(ErrReportWrapper)
+        })?;
+        Ok(Self { transport })
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct SocketCanTransportWrapper {
+    transport: SocketCanTransport,
+}
+
+#[cfg(target_os = "linux")]
+impl SocketCanTransportWrapper {
+    fn get_transport(&self) -> SocketCanTransport {
+        self.transport.clone()
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[gen_stub_pymethods]
+#[pymethods]
+impl SocketCanTransportWrapper {
+    #[new]
+    fn new(interface_name: String) -> PyResult<Self> {
+        let rt = Runtime::new().map_err(|e| ErrReportWrapper(e.into()))?;
+        let transport = rt.block_on(async {
+            SocketCanTransport::new(interface_name)
+                .await
+                .map_err(ErrReportWrapper)
+        })?;
+        Ok(Self { transport })
+    }
+}
+
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct StubTransportWrapper {
+    transport: StubTransport,
+}
+
+impl StubTransportWrapper {
+    fn get_transport(&self) -> StubTransport {
+        self.transport.clone()
+    }
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl StubTransportWrapper {
+    #[new]
+    fn new(port_name: String) -> Self {
+        Self {
+            transport: StubTransport::new(port_name),
+        }
+    }
+}
+
+#[gen_stub_pyclass]
+#[pyclass]
 struct RobstrideActuator {
     supervisor: Arc<Mutex<Supervisor>>,
     rt: Runtime,
@@ -153,8 +233,9 @@ struct RobstrideActuator {
 impl RobstrideActuator {
     #[new]
     fn new(
-        ports: Vec<String>,
+        transports: Vec<Py<PyAny>>,
         py_actuators_config: Vec<(u8, RobstrideActuatorConfig)>,
+        py: Python,
     ) -> PyResult<Self> {
         let actuators_config: Vec<(u8, ActuatorConfiguration)> = py_actuators_config
             .into_iter()
@@ -167,47 +248,27 @@ impl RobstrideActuator {
             let mut supervisor =
                 Supervisor::new(Duration::from_secs(1)).map_err(ErrReportWrapper)?;
 
-            for port in &ports {
-                if port.starts_with("/dev/tty") {
-                    let serial = CH341Transport::new(port.clone())
-                        .await
-                        .map_err(ErrReportWrapper)?;
-                    supervisor
-                        .add_transport(port.clone(), TransportType::CH341(serial))
-                        .await
-                        .map_err(ErrReportWrapper)?;
-                } else if port.starts_with("can") {
-                    #[cfg(target_os = "linux")]
-                    {
-                        let can = SocketCanTransport::new(port.clone())
-                            .await
-                            .map_err(ErrReportWrapper)?;
-                        supervisor
-                            .add_transport(port.clone(), TransportType::SocketCAN(can))
-                            .await
-                            .map_err(ErrReportWrapper)?;
-                    }
-                    #[cfg(not(target_os = "linux"))]
-                    {
-                        return Err(ErrReportWrapper(eyre::eyre!(
-                            "SocketCAN is only supported on Linux"
-                        )));
-                    }
-                } else if port.starts_with("stub") {
-                    let stub = StubTransport::new(port.clone());
-                    supervisor
-                        .add_transport(port.clone(), TransportType::Stub(stub))
-                        .await
-                        .map_err(ErrReportWrapper)?;
-                } else {
-                    return Err(ErrReportWrapper(eyre::eyre!("Invalid port: {}", port)));
-                }
+            for transport_obj in &transports {
+                let transport_type =
+                    Self::extract_transport_type(transport_obj, py).map_err(|e| {
+                        ErrReportWrapper(eyre::eyre!("Transport extraction failed: {}", e))
+                    })?;
+                let port_name = transport_type.port();
+                supervisor
+                    .add_transport(port_name, transport_type)
+                    .await
+                    .map_err(ErrReportWrapper)?;
             }
 
             // Scan for motors
-            for port in &ports {
+            for transport_obj in &transports {
+                let transport_type =
+                    Self::extract_transport_type(transport_obj, py).map_err(|e| {
+                        ErrReportWrapper(eyre::eyre!("Transport extraction failed: {}", e))
+                    })?;
+                let port_name = transport_type.port();
                 let discovered_ids = supervisor
-                    .scan_bus(0xFD, port, &actuators_config)
+                    .scan_bus(0xFD, &port_name, &actuators_config)
                     .await
                     .map_err(ErrReportWrapper)?;
                 for (motor_id, _) in &actuators_config {
@@ -217,7 +278,7 @@ impl RobstrideActuator {
                 }
             }
 
-            Ok(supervisor)
+            Ok::<Supervisor, ErrReportWrapper>(supervisor)
         })?;
 
         Ok(RobstrideActuator {
@@ -321,6 +382,34 @@ impl RobstrideActuator {
     }
 }
 
+impl RobstrideActuator {
+    fn extract_transport_type(
+        transport_obj: &Py<PyAny>,
+        py: Python,
+    ) -> Result<TransportType, PyErr> {
+        // Try to extract CH341Transport
+        if let Ok(ch341_wrapper) = transport_obj.extract::<PyRef<CH341TransportWrapper>>(py) {
+            return Ok(TransportType::CH341(ch341_wrapper.get_transport()));
+        }
+
+        // Try to extract SocketCanTransport (Linux only)
+        #[cfg(target_os = "linux")]
+        if let Ok(socketcan_wrapper) = transport_obj.extract::<PyRef<SocketCanTransportWrapper>>(py)
+        {
+            return Ok(TransportType::SocketCAN(socketcan_wrapper.get_transport()));
+        }
+
+        // Try to extract StubTransport
+        if let Ok(stub_wrapper) = transport_obj.extract::<PyRef<StubTransportWrapper>>(py) {
+            return Ok(TransportType::Stub(stub_wrapper.get_transport()));
+        }
+
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "Invalid transport object. Must be one of: CH341TransportWrapper, SocketCanTransportWrapper, or StubTransportWrapper"
+        ))
+    }
+}
+
 impl From<RobstrideActuatorConfig> for robstride::ActuatorConfiguration {
     fn from(config: RobstrideActuatorConfig) -> Self {
         Self {
@@ -347,6 +436,10 @@ fn bindings(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<RobstrideConfigureRequest>()?;
     m.add_class::<RobstrideActuatorState>()?;
     m.add_class::<RobstrideActuatorConfig>()?;
+    m.add_class::<CH341TransportWrapper>()?;
+    #[cfg(target_os = "linux")]
+    m.add_class::<SocketCanTransportWrapper>()?;
+    m.add_class::<StubTransportWrapper>()?;
     Ok(())
 }
 
